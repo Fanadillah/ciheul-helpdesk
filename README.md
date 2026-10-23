@@ -277,7 +277,7 @@ APK release berhasil dibangun (±48 MB).
 
 QA manual yang sudah dijalankan: login semua role, kirim pesan web↔widget realtime, tiket widget
 muncul di inbox agent, laporan supervisor, admin CRUD, CSAT, dan pengecekan UI headless
-(Chrome + Puppeteer).
+(Chrome + Puppeteer). Detail skenario dan hasilnya ada di [`docs/QA.md`](docs/QA.md).
 
 ---
 
