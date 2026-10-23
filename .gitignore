@@ -1,0 +1,38 @@
+# dependencies
+node_modules/
+
+# runtime data
+server/data/*.db
+server/data/*.db-*
+server/uploads/*
+!server/uploads/.gitkeep
+!server/data/.gitkeep
+
+# secrets
+.env
+.env.*
+!server/.env.example
+
+# logs & temp
+*.log
+build-mobile.log
+
+# Flutter / Dart
+mobile/.dart_tool/
+mobile/.flutter-plugins
+mobile/.flutter-plugins-dependencies
+mobile/.packages
+mobile/build/
+mobile/android/.gradle/
+mobile/android/local.properties
+mobile/ios/Pods/
+mobile/windows/flutter/ephemeral/
+mobile/.idea/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# test brief (not part of the deliverable)
+Programming Test v4 (1).pdf

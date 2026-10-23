@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ciheul Cloud - Demo Widget Helpdesk</title>
+  <style>
+    :root { --blue: #2563eb; --ink: #0f172a; --muted: #64748b; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: var(--ink); background: #f8fafc; }
+    .nav { display: flex; align-items: center; gap: 28px; padding: 18px 48px; background: #fff; border-bottom: 1px solid #e2e8f0; }
+    .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 18px; }
+    .logo span { width: 30px; height: 30px; border-radius: 9px; background: linear-gradient(135deg, #2563eb, #7c3aed); display: grid; place-items: center; color: #fff; font-size: 15px; }
+    .nav a { color: #475569; text-decoration: none; font-size: 14px; font-weight: 500; }
+    .nav a:hover { color: var(--blue); }
+    .cta { margin-left: auto; background: var(--blue); color: #fff; border: 0; padding: 10px 18px; border-radius: 10px; font-weight: 600; font-size: 13px; cursor: pointer; }
+    .hero { display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px; padding: 80px 48px; max-width: 1180px; margin: 0 auto; align-items: center; }
+    .eyebrow { display: inline-block; background: #eef2ff; color: #4338ca; font-size: 12px; font-weight: 700; padding: 6px 12px; border-radius: 999px; letter-spacing: .3px; }
+    h1 { font-size: 46px; line-height: 1.1; margin: 18px 0 14px; letter-spacing: -1.2px; }
+    h1 em { font-style: normal; background: linear-gradient(120deg, #2563eb, #7c3aed); -webkit-background-clip: text; background-clip: text; color: transparent; }
+    .lead { color: var(--muted); font-size: 16px; line-height: 1.7; max-width: 520px; }
+    .actions { display: flex; gap: 12px; margin-top: 26px; }
+    .btn { border: 1px solid #cbd5e1; background: #fff; color: var(--ink); padding: 12px 20px; border-radius: 11px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+    .cards { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
+    .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 18px; padding: 22px; box-shadow: 0 12px 30px rgba(15,23,42,.05); }
+    .card b { display: block; font-size: 26px; margin-bottom: 4px; }
+    .card small { color: var(--muted); font-size: 12.5px; }
+    .card.hi { background: linear-gradient(140deg, #1e293b, #0f172a); color: #fff; border-color: transparent; }
+    .card.hi small { color: #cbd5e1; }
+    .section { padding: 60px 48px; max-width: 1180px; margin: 0 auto; }
+    .section h2 { font-size: 30px; margin: 0 0 10px; letter-spacing: -.6px; }
+    .section p { color: var(--muted); margin: 0 0 26px; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; }
+    .step { background: #fff; border: 1px solid #e2e8f0; border-radius: 16px; padding: 22px; }
+    .step i { width: 34px; height: 34px; border-radius: 10px; background: #eef2ff; color: #4338ca; display: grid; place-items: center; font-style: normal; font-weight: 700; margin-bottom: 12px; }
+    .step h3 { margin: 0 0 6px; font-size: 15px; }
+    .step p { margin: 0; font-size: 13px; line-height: 1.6; }
+    pre { background: #0f172a; color: #e2e8f0; padding: 16px; border-radius: 12px; overflow-x: auto; font-size: 12.5px; line-height: 1.6; }
+    .note { font-size: 12.5px; color: var(--muted); margin-top: 14px; }
+    footer { text-align: center; color: #94a3b8; font-size: 12px; padding: 30px; border-top: 1px solid #e2e8f0; }
+    @media (max-width: 900px) { .hero { grid-template-columns: 1fr; padding: 48px 24px; } .nav { padding: 16px 24px; } .section { padding: 40px 24px; } .steps { grid-template-columns: 1fr; } h1 { font-size: 36px; } }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="logo"><span>C</span>Ciheul Cloud</div>
+    <a href="#fitur">Fitur</a>
+    <a href="#cara">Cara Kerja</a>
+    <a href="#embed">Integrasi</a>
+    <button class="cta" onclick="window.HelpdeskWidget.open()">Butuh bantuan?</button>
+  </nav>
+
+  <header class="hero">
+    <div>
+      <span class="eyebrow">DEMO HALAMAN WEBSITE</span>
+      <h1>Kelola bisnis Anda, <em>kami bantu</em> saat ada kendala.</h1>
+      <p class="lead">Halaman ini mensimulasikan website pelanggan. Klik bubble chat di kanan bawah untuk
+        mencoba live chat helpdesk secara real-time. Pesan akan muncul juga di dashboard agent dan aplikasi mobile.</p>
+      <div class="actions">
+        <button class="btn primary" onclick="window.HelpdeskWidget.open()">Mulai Live Chat</button>
+        <a class="btn" href="/" target="_blank" rel="noopener">Buka Dashboard Agent</a>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card hi"><b>12 dtk</b><small>Rata-rata respon pertama</small></div>
+      <div class="card"><b>98.7%</b><small>Uptime layanan cloud</small></div>
+      <div class="card"><b>4.8/5</b><small>Kepuasan pelanggan (CSAT)</small></div>
+      <div class="card"><b>24/7</b><small>AI + tim support siaga</small></div>
+    </div>
+  </header>
+
+  <section class="section" id="cara">
+    <h2>Bagaimana demo ini bekerja?</h2>
+    <p>Tiga komponen yang saling terhubung secara real-time.</p>
+    <div class="steps">
+      <div class="step"><i>1</i><h3>Widget di website</h3><p>Pesan dari bubble chat dikirim melalui Socket.IO. Saat offline, pesan masuk antrean dan dikirim otomatis.</p></div>
+      <div class="step"><i>2</i><h3>Dashboard agent</h3><p>Agent menerima tiket, membalas, mengirim catatan internal, dan memantau SLA dari browser.</p></div>
+      <div class="step"><i>3</i><h3>Aplikasi mobile</h3><p>Balasan yang sama tampil di aplikasi Flutter, lengkap dengan antrean offline dan notifikasi.</p></div>
+    </div>
+  </section>
+
+  <section class="section" id="embed">
+    <h2>Pasang di website Anda</h2>
+    <p>Satu baris script, tanpa framework.</p>
+    <pre>&lt;script src="http://localhost:3000/widget/chat-widget.js"
+        data-api="http://localhost:3000" async&gt;&lt;/script&gt;</pre>
+    <p class="note">Ganti host dengan domain server helpdesk Anda. Widget memakai Shadow DOM sehingga tidak bentrok dengan CSS website.</p>
+  </section>
+
+  <footer>Ciheul Helpdesk demo &middot; Node.js + Socket.IO + SQLite + Flutter</footer>
+
+  <script src="/widget/chat-widget.js" data-api="" async></script>
+</body>
+</html>
