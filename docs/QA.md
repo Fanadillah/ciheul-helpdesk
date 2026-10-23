@@ -16,7 +16,7 @@ Tanggal pengujian: 23 Oktober 2026.
 ## Automated tests
 
 ```bash
-cd server && npm test          # 6 test lulus
+cd server && npm test          # 9 test lulus
 cd mobile && flutter analyze   # No issues found
 cd mobile && flutter test      # 4 test lulus
 cd mobile && flutter build apk --release   # sukses, ±48,5 MB
@@ -27,10 +27,14 @@ Cakupan backend (`server/tests/api.test.js`):
 1. Health check, proteksi endpoint privat, dan penolakan password salah.
 2. Sesi guest widget: pembuatan guest, reuse email guest, konflik dengan akun terdaftar.
 3. Siklus tiket REST: buat → assign → pesan → catatan internal → resolve → CSAT → reopen.
-4. Otorisasi: customer tidak dapat mengubah status; laporan hanya supervisor/admin.
-5. Idempotensi pesan: `client_message_id` yang sama tidak membuat pesan ganda.
+4. Otorisasi: customer tidak dapat mengubah status; laporan hanya supervisor/admin;
+   pembuatan user hanya admin; agent tidak dapat mengubah kategori.
+5. Idempotensi pesan: `client_message_id` yang sama tidak membuat pesan ganda, dan tidak
+   membocorkan pesan dari tiket lain.
 6. Socket.IO: join room, `message:new`, retry idempoten, `ticket:update`, dan internal note
    hanya sampai ke staff.
+7. Auto-close: tiket resolved lebih lama dari jendela kebijakan berubah menjadi closed dan
+   tidak menghasilkan event ganda pada sweep berikutnya.
 
 Cakupan Flutter (`mobile/test/widget_test.dart`): parsing `Ticket`, status tiket, formatter
 (label, inisial, normalisasi URL), dan render `StatusChip`.
@@ -67,3 +71,39 @@ Bukti tangkapan layar mobile: [`screenshots/mobile-login.png`](screenshots/mobil
 - Notifikasi mobile bersifat lokal (tidak memakai FCM) dan hanya muncul saat proses aplikasi aktif.
 - Emulator memakai `10.0.2.2`; untuk perangkat fisik ganti alamat server dari halaman login atau
   menu Pengaturan.
+
+## Audit kualitas
+
+Audit terakhir dilakukan setelah fitur utama selesai. Fokusnya bukan menambah fitur, tetapi
+memastikan perilaku tetap benar saat jaringan buruk, role tidak sesuai, dan data datang dari kanal
+berbeda.
+
+| Area | Temuan | Perbaikan |
+|---|---|---|
+| RBAC admin | `POST /api/users` masih dapat dipanggil agent | Route manajemen user dibatasi admin; daftar user tetap tersedia untuk staff |
+| Admin self-lockout | Admin dapat menurunkan role/menonaktifkan akunnya sendiri | Ditolak dengan pesan yang jelas |
+| Validasi kategori | Angka SLA negatif dapat tersimpan | Divalidasi sebagai bilangan positif |
+| Idempotensi | Pencarian `client_message_id` tidak dibatasi tiket | Dicari per tiket; benturan antar-tiket menghasilkan 409, bukan membocorkan pesan |
+| Attachment | File ditulis sebelum otorisasi tiket diperiksa | Otorisasi dipindah ke depan; file dibersihkan bila metadata gagal disimpan |
+| Presence | Satu tab ditutup membuat agent langsung offline | Jumlah koneksi dihitung per user |
+| Auto-close | Tiket resolved menumpuk | Sweep berkala menutup tiket setelah 7 hari dan mencatat event |
+| Realtime | Emit/notifikasi tersebar di banyak route | Dipusatkan di `realtime/events.js` |
+| Widget | Label status salah dan klaim enkripsi tidak benar | Label diperbaiki; klaim dihapus; antrean di-flush lewat REST/socket |
+| Widget | Retry pesan pertama gagal bila tiket belum ada | Retry membuat tiket lebih dulu, lalu mengirim ulang pesan |
+| Mobile | Antrean hanya dikirim bila socket terhubung | Flush lewat REST, dilindungi flag agar tidak berjalan ganda |
+| Mobile | Notifikasi lokal muncul untuk chat yang sedang dibuka | Notifikasi untuk tiket aktif tidak ditampilkan |
+| Mobile | Pesan antre tidak terlihat statusnya | Status “Menunggu koneksi” ditambahkan |
+| Web | Listener/timer menumpuk setelah logout | Semua listener, polling, dan panel dibersihkan saat shell dilepas |
+| Web | Toast menandai pesan agent sendiri sebagai pesan customer | Kondisi dibalik ke `sender_type === 'customer'` |
+| Web | Pilihan tiket cepat dapat menimpa tiket yang lebih baru | Token pilihan mencegah respons lama menimpa state |
+
+Perubahan ini diverifikasi ulang dengan `npm test`, `flutter analyze`, `flutter test`, build APK,
+dan smoke test web/widget/mobile.
+
+Verifikasi akhir:
+
+- APK release: 50.838.081 byte (48,5 MB), SHA-256
+  `06C1F467549C327138B39F0725BABD7D24072F3DAF9C6CF858025811E1690500`.
+- Smoke test web headless: login agent, 4 tiket tampil, detail tiket terbuka, panel notifikasi
+  terbuka, tombol resync berfungsi, logout kembali ke halaman login, tanpa error console.
+- Server health `ok`; web dan widget demo merespons HTTP 200; login dan daftar tiket REST berhasil.

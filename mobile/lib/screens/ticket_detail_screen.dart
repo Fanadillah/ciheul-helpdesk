@@ -136,6 +136,12 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
         _loading = false;
         _error = err.message;
       });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = 'Tidak dapat memuat tiket. Periksa koneksi lalu coba lagi.';
+      });
     }
   }
 
@@ -175,7 +181,9 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     });
   }
 
-  String _newClientId() => '${DateTime.now().microsecondsSinceEpoch}-${DateTime.now().millisecond}';
+  String _newClientId() =>
+      '${DateTime.now().microsecondsSinceEpoch}-${_clientCounter++}';
+  static int _clientCounter = 0;
 
   Future<void> _send() async {
     final text = _input.text.trim();
@@ -220,13 +228,37 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
           _sortMessages();
         });
       } else if (outcome.queued) {
+        setState(() {
+          final index = _messages.indexWhere((m) => m.clientMessageId == clientId);
+          if (index >= 0) {
+            _messages[index] = _messages[index].copyWith(
+              pending: false,
+              queued: true,
+              failed: false,
+            );
+          }
+          _internal = false;
+        });
         _snack('Pesan masuk antrean dan akan terkirim otomatis saat online.');
       } else if (outcome.error != null) {
         setState(() {
           final index = _messages.indexWhere((m) => m.clientMessageId == clientId);
-          if (index >= 0) _messages[index] = _messages[index].copyWith(pending: false, failed: true);
+          if (index >= 0) {
+            _messages[index] = _messages[index].copyWith(
+              pending: false,
+              queued: false,
+              failed: true,
+            );
+          }
         });
         _snack(outcome.error!, error: true);
+      } else {
+        setState(() {
+          final index = _messages.indexWhere((m) => m.clientMessageId == clientId);
+          if (index >= 0) {
+            _messages[index] = _messages[index].copyWith(pending: false, failed: true);
+          }
+        });
       }
     } finally {
       if (mounted) setState(() => _sending = false);
@@ -249,7 +281,6 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
     _snack('AI sedang menyusun balasan...');
     try {
       await widget.state.generateAiReply(widget.ticketId);
-      await Future.delayed(const Duration(milliseconds: 1600));
       await _load(silent: true);
       if (mounted) _snack('Balasan AI dibuat');
     } on ApiException catch (err) {
@@ -645,14 +676,20 @@ class _TicketDetailScreenState extends State<TicketDetailScreen> {
                             ? 'Mengirim...'
                             : message.failed
                                 ? 'Gagal terkirim'
-                                : formatClock(message.createdAt),
+                                : message.queued
+                                    ? 'Menunggu koneksi'
+                                    : formatClock(message.createdAt),
                         style: TextStyle(
                           fontSize: 9.5,
-                          color: message.failed ? AppColors.danger : AppColors.soft,
+                          color: message.failed
+                              ? AppColors.danger
+                              : message.queued
+                                  ? AppColors.warning
+                                  : AppColors.soft,
                           fontWeight: message.failed ? FontWeight.w700 : FontWeight.w400,
                         ),
                       ),
-                      if (isMine && !message.pending && !message.failed) ...[
+                      if (isMine && !message.pending && !message.failed && !message.queued) ...[
                         const SizedBox(width: 4),
                         const Icon(Icons.done_all_rounded, size: 12, color: AppColors.primary),
                       ],

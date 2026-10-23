@@ -9,6 +9,7 @@ Satu tiket, satu percakapan — dapat dilanjutkan dari **live chat widget**, **w
 | BPMN proses bisnis | [`docs/BPMN-Helpdesk.pdf`](docs/BPMN-Helpdesk.pdf) |
 | WBS & estimasi | [`docs/WBS-Helpdesk.xlsx`](docs/WBS-Helpdesk.xlsx) |
 | Analisis & desain | [`docs/ANALISIS.md`](docs/ANALISIS.md) |
+| Panduan proyek & interview | [`docs/PANDUAN-PROYEK.md`](docs/PANDUAN-PROYEK.md) |
 | Aplikasi web + widget | folder [`web/`](web) & [`widget/`](widget) |
 | Backend REST + Socket.IO | folder [`server/`](server) |
 | Mobile app (Flutter) | folder [`mobile/`](mobile) |
@@ -121,12 +122,12 @@ tetap bekerja.
 - Pre-chat (nama, email), sesi guest JWT, persistensi `localStorage`.
 - Chat realtime, indikator typing, status koneksi, unread badge.
 - **Offline queue**: pesan disimpan dan dikirim ulang otomatis setelah reconnect.
-- CSAT bintang setelah tiket resolved, tombol reopen, penanganan tiket closed.
-- Lampiran (upload via REST) dan fallback polling bila Socket.IO gagal.
+- CSAT bintang setelah tiket resolved dan tombol mulai chat baru untuk tiket yang sudah selesai.
+- Fallback polling bila Socket.IO gagal; status kirim pesan (mengirim, antre, gagal) dan retry.
 
 ### Web app
 - Login multi-role dengan guard dan redirect sesuai role.
-- Inbox split-view: filter status/prioritas/assignee, pencarian, badge unread, notifikasi browser.
+- Inbox split-view: filter status/prioritas/assignee, pencarian, badge unread, notifikasi in-app.
 - Detail tiket: chat realtime, **catatan internal** (tidak terlihat customer), lampiran,
   canned response, **balasan AI**, ubah status/prioritas/assignee.
 - Customer portal: buat tiket, daftar tiket sendiri, CSAT, reopen.
@@ -136,9 +137,9 @@ tetap bekerja.
 - Fallback polling + tombol resync saat socket terputus.
 
 ### Mobile (Flutter)
-- Login customer/agent/supervisor/admin, simpan sesi aman di `shared_preferences`.
+- Login customer/agent/supervisor/admin, sesi tersimpan di `shared_preferences`.
 - Daftar tiket dengan filter, pencarian, pull-to-refresh, badge unread.
-- Detail chat realtime, optimistic UI, status pengiriman, retry antrean offline.
+- Detail chat realtime, optimistic UI, status kirim (mengirim/antre/gagal), antrean offline otomatis.
 - Buat tiket baru, CSAT, reopen, ubah status/assignee (staff), balasan AI.
 - **Local notification** (`flutter_local_notifications`) untuk pesan/notifikasi baru.
 - Pengaturan alamat server (emulator vs perangkat fisik) dan status koneksi.
@@ -146,9 +147,10 @@ tetap bekerja.
 ### Backend
 - REST + Socket.IO, JWT (12 jam), password **bcrypt**, RBAC di REST & event socket.
 - Siklus tiket dengan validasi transisi status, SLA first response/resolution, audit events.
-- **Idempotensi pesan** lewat `client_message_id` (REST & socket) → retry tidak menggandakan pesan.
+- **Idempotensi pesan** lewat `client_message_id` (REST & socket), dibatasi per tiket → retry tidak menggandakan pesan.
 - AI auto-reply saat tiket dibuat (opsional) + fallback knowledge base tanpa API key.
 - Rate limit login/guest session, validasi input, batas ukuran & tipe lampiran.
+- Auto-close tiket resolved setelah 7 hari (dapat diatur lewat `AUTO_CLOSE_DAYS`).
 - Seed data demo; server tidak menghapus data saat restart.
 
 ---
@@ -184,7 +186,7 @@ Semua endpoint privat memakai header `Authorization: Bearer <token>`.
 | `POST` | `/api/tickets/:id/reopen` | Reopen ≤ 7 hari |
 | `POST` | `/api/tickets/:id/ai-reply` | Generate balasan AI (staff) |
 | `GET` | `/api/reports/summary` | KPI supervisor/admin |
-| `GET/POST/PATCH` | `/api/users`, `/api/categories`, `/api/kb` | Admin |
+| `GET/POST/PATCH` | `/api/users`, `/api/categories`, `/api/kb` | Admin (daftar user/kategori juga untuk staff) |
 
 ### Socket.IO
 
@@ -193,8 +195,10 @@ Auth: `io(url, { auth: { token } })`.
 | Arah | Event | Payload |
 |---|---|---|
 | client → server | `ticket:join` | `{ticket_id, last_seq}` → ack `{ok,ticket,messages}` |
+| client → server | `ticket:leave` | `{ticket_id}` |
 | client → server | `message:send` | `{ticket_id, body, client_message_id, is_internal}` → ack `{ok,duplicate,message_id,seq}` |
 | client → server | `typing` / `message:read` | `{ticket_id, is_typing}` / `{ticket_id, message_id}` |
+| client → server | `presence:list` | ack `{ok,users}` (staff) |
 | server → client | `message:new`, `ticket:update`, `ticket:created` | objek pesan/tiket |
 | server → client | `notification:new`, `sla:breach`, `presence:update` | objek notifikasi/event |
 
@@ -226,11 +230,14 @@ flutter build apk --release --dart-define=API_BASE=http://10.0.2.2:3000
 APK yang disertakan di repo dibangun dengan base URL default emulator. Alamat server tetap dapat
 diganti dari dalam aplikasi tanpa rebuild. Izinkan notifikasi saat diminta (Android 13+).
 
+File `artifacts/helpdesk.apk` berukuran 50.838.081 byte (48,5 MB) dengan SHA-256
+`06C1F467549C327138B39F0725BABD7D24072F3DAF9C6CF858025811E1690500`.
+
 ### Catatan
 - Notifikasi yang dipakai adalah **local notification** (bonus), dipicu event Socket.IO; belum
   memakai FCM sehingga tidak menerima notifikasi saat aplikasi benar-benar dimatikan.
 - APK ditandatangani dengan debug key agar dapat langsung dipasang untuk demo.
-- Lampiran di mobile ditampilkan sebagai nama file; upload/download penuh tersedia di web/widget.
+- Lampiran di mobile ditampilkan sebagai nama file; upload/download penuh tersedia di web.
 
 ### Tampilan
 
@@ -255,7 +262,8 @@ npm start
 ```
 
 Variabel penting: `AI_AUTO_REPLY=false` untuk mematikan auto-reply, `AI_API_KEY` kosong untuk
-fallback KB. AI hanya membuat balasan awal dan **tidak** menutup tiket.
+fallback KB. AI dipakai untuk balasan awal otomatis dan tombol **Balasan AI** manual; AI tidak
+menutup tiket dan tidak menggantikan keputusan agent.
 
 ---
 
@@ -272,11 +280,11 @@ flutter analyze
 flutter test
 ```
 
-Hasil terakhir: **6 test backend lulus**, **4 test Flutter lulus**, `flutter analyze` tanpa issue,
+Hasil terakhir: **9 test backend lulus**, **4 test Flutter lulus**, `flutter analyze` tanpa issue,
 APK release berhasil dibangun (±48 MB).
 
 QA manual yang sudah dijalankan: login semua role, kirim pesan web↔widget realtime, tiket widget
-muncul di inbox agent, laporan supervisor, admin CRUD, CSAT, dan pengecekan UI headless
+muncul di inbox agent, laporan supervisor, admin user/kategori/KB, CSAT, dan pengecekan UI headless
 (Chrome + Puppeteer). Detail skenario dan hasilnya ada di [`docs/QA.md`](docs/QA.md).
 
 ---
@@ -295,7 +303,7 @@ muncul di inbox agent, laporan supervisor, admin CRUD, CSAT, dan pengecekan UI h
 
 - SQLite belum cocok untuk multi-instance; produksi dapat memakai PostgreSQL + Redis adapter.
 - Notifikasi mobile bersifat lokal; FCM dapat ditambahkan untuk background push.
-- Belum ada SLA pause saat status Pending, dan auto-close terjadwal masih manual/berkala.
+- Belum ada SLA pause saat status Pending; hitung mundur SLA tetap berjalan selama tiket pending.
 - Belum ada enkripsi end-to-end atau SSO; token disimpan di storage lokal perangkat.
 - Seed memakai password demo — **jangan** dipakai di produksi.
 

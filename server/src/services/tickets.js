@@ -88,7 +88,7 @@ function listTickets(db, user, filters = {}) {
         WHEN 'medium' THEN 2 ELSE 3 END,
       t.updated_at DESC
     LIMIT ?`;
-  params.push(Number(filters.limit) || 100);
+  params.push(Math.min(200, Math.max(1, Number(filters.limit) || 100)));
   return db.prepare(sql).all(...params).map(decorate);
 }
 
@@ -260,6 +260,31 @@ function sweepSla(db) {
   return breaches;
 }
 
+/** Close tickets that have been sitting in Resolved longer than the policy window. */
+function autoCloseResolved(db, days = 7) {
+  const windowDays = Number(days);
+  if (!Number.isFinite(windowDays) || windowDays <= 0) return [];
+  const cutoff = new Date(Date.now() - windowDays * 86400000).toISOString();
+  const rows = db.prepare(`SELECT id FROM tickets
+    WHERE status = 'resolved' AND resolved_at IS NOT NULL AND resolved_at <= ?`).all(cutoff);
+  if (!rows.length) return [];
+
+  const ts = now();
+  const update = db.prepare(`UPDATE tickets SET status = 'closed', closed_at = ?, updated_at = ?
+    WHERE id = ? AND status = 'resolved'`);
+  const closedIds = [];
+  const tx = db.transaction(() => {
+    for (const row of rows) {
+      if (update.run(ts, ts, row.id).changes) {
+        logEvent(db, row.id, null, 'status_changed', 'resolved', 'closed');
+        closedIds.push(row.id);
+      }
+    }
+  });
+  tx();
+  return closedIds.map((id) => decorate(getTicketRow(db, id)));
+}
+
 module.exports = {
   OPEN_STATUSES,
   decorate,
@@ -271,6 +296,7 @@ module.exports = {
   submitCsat,
   getEvents,
   sweepSla,
+  autoCloseResolved,
   pickAgent,
   logEvent,
 };

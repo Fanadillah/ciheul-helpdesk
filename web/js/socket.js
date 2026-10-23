@@ -13,8 +13,17 @@ function loadClient() {
     const script = document.createElement('script');
     script.src = '/socket.io/socket.io.js';
     script.async = true;
-    script.onload = () => (window.io ? resolve(window.io) : reject(new Error('Socket client tidak tersedia')));
-    script.onerror = () => reject(new Error('Gagal memuat socket client'));
+    script.onload = () => {
+      if (window.io) resolve(window.io);
+      else {
+        loadingPromise = null;
+        reject(new Error('Socket client tidak tersedia'));
+      }
+    };
+    script.onerror = () => {
+      loadingPromise = null;
+      reject(new Error('Gagal memuat socket client'));
+    };
     document.head.appendChild(script);
   });
   return loadingPromise;

@@ -9,6 +9,11 @@ import { connectSocket, disconnectSocket } from './socket.js';
 
 const app = document.getElementById('app');
 
+let shellUnsubs = [];
+let hashListener = null;
+let pollTimer = null;
+let notifCloser = null;
+
 const state = {
   user: null,
   notifications: [],
@@ -40,6 +45,7 @@ async function boot() {
 
 function showLogin() {
   destroyView();
+  teardownShell();
   disconnectSocket();
   state.shellReady = false;
   renderLogin(app, (user) => {
@@ -98,6 +104,7 @@ function renderShell(isStaff) {
             <h1 id="page-title">Kotak Masuk</h1>
           </div>
           <span class="spacer"></span>
+          <button class="iconbtn" id="resync" title="Muat ulang data" aria-label="Muat ulang data">${icons.clock}</button>
           <span class="socket-pill" id="socket-pill"><span class="dot"></span><span id="socket-text">Realtime</span></span>
           <button class="iconbtn" id="bell" title="Notifikasi" aria-label="Notifikasi">
             ${icons.bell}<span class="dot-badge hidden" id="bell-badge">0</span>
@@ -110,8 +117,13 @@ function renderShell(isStaff) {
 }
 
 function bindShell() {
+  teardownShell();
   qs('#logout').addEventListener('click', () => logout(false));
   qs('#sidebar-toggle').addEventListener('click', () => qs('#shell').classList.toggle('collapsed'));
+  qs('#resync').addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('helpdesk:resync'));
+    toast('Menyegarkan data...', 'info', 1200);
+  });
 
   const bell = qs('#bell');
   bell.addEventListener('click', (event) => {
@@ -119,30 +131,44 @@ function bindShell() {
     toggleNotifications();
   });
 
-  window.addEventListener('hashchange', route);
+  hashListener = route;
+  window.addEventListener('hashchange', hashListener);
 
-  sock.onStatus((connected) => {
+  shellUnsubs.push(sock.onStatus((connected) => {
     const pill = qs('#socket-pill');
     const text = qs('#socket-text');
     if (!pill) return;
     pill.classList.toggle('offline', !connected);
     text.textContent = connected ? 'Realtime' : 'Mode REST';
     if (connected) window.dispatchEvent(new CustomEvent('helpdesk:resync'));
-  });
+  }));
 
-  sock.on('notification:new', (notification) => {
+  shellUnsubs.push(sock.on('notification:new', (notification) => {
     state.notifications.unshift(notification);
     renderNotifications();
     if (qs('.notif-panel')) renderNotifPanel();
     toast(notification.title, 'info');
-  });
+  }));
 
-  sock.on('ticket:created', () => {
+  shellUnsubs.push(sock.on('ticket:created', () => {
     if (['agent', 'supervisor', 'admin'].includes(state.user.role)) {
       setTimeout(() => window.dispatchEvent(new CustomEvent('helpdesk:resync')), 400);
     }
+  }));
+  shellUnsubs.push(sock.on('presence:update', () => {}));
+}
+
+function teardownShell() {
+  if (hashListener) {
+    window.removeEventListener('hashchange', hashListener);
+    hashListener = null;
+  }
+  shellUnsubs.forEach((unsubscribe) => {
+    try { unsubscribe(); } catch { /* ignore */ }
   });
-  sock.on('presence:update', () => {});
+  shellUnsubs = [];
+  stopFallbackPolling();
+  closeNotifPanel();
 }
 
 function updateInboxBadge() {
@@ -237,15 +263,23 @@ function renderNotifications() {
 
 function toggleNotifications() {
   if (qs('.notif-panel')) {
-    qs('.notif-panel').remove();
+    closeNotifPanel();
     return;
   }
   renderNotifPanel();
 }
 
+function closeNotifPanel() {
+  if (notifCloser) {
+    document.removeEventListener('mousedown', notifCloser);
+    notifCloser = null;
+  }
+  const panel = qs('.notif-panel');
+  if (panel) panel.remove();
+}
+
 function renderNotifPanel() {
-  const existing = qs('.notif-panel');
-  if (existing) existing.remove();
+  closeNotifPanel();
   const panel = document.createElement('div');
   panel.className = 'notif-panel';
   panel.innerHTML = `<header>NOTIFIKASI
@@ -277,23 +311,28 @@ function renderNotifPanel() {
       const notif = state.notifications.find((n) => n.id === id);
       if (notif) notif.read_at = new Date().toISOString();
       renderNotifications();
-      panel.remove();
+      closeNotifPanel();
       if (ticketId) location.hash = `#/ticket/${ticketId}`;
     });
   });
 
-  const closer = (event) => {
-    if (!panel.contains(event.target) && !qs('#bell').contains(event.target)) {
-      panel.remove();
-      document.removeEventListener('mousedown', closer);
-    }
+  notifCloser = (event) => {
+    if (!panel.contains(event.target) && !qs('#bell').contains(event.target)) closeNotifPanel();
   };
-  setTimeout(() => document.addEventListener('mousedown', closer), 0);
+  document.addEventListener('mousedown', notifCloser);
 }
 
 // ------------------------------------------------------------------ fallback
+function stopFallbackPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
+
 function startFallbackPolling() {
-  setInterval(() => {
+  stopFallbackPolling();
+  pollTimer = setInterval(() => {
     if (!sock.isConnected()) window.dispatchEvent(new CustomEvent('helpdesk:resync'));
   }, 8000);
 }

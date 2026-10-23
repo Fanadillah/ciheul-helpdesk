@@ -52,11 +52,17 @@ function positiveInt(value, field) {
   return n;
 }
 
+function bool(value, field) {
+  if (value === true || value === 1 || value === '1') return true;
+  if (value === false || value === 0 || value === '0') return false;
+  throw badRequest(`${field} harus bernilai true atau false`);
+}
+
 function canTransition(from, to) {
   return from === to || (TRANSITIONS[from] || []).includes(to);
 }
 
 module.exports = {
   ROLES, PRIORITIES, STATUSES, TRANSITIONS,
-  requireFields, oneOf, isEmail, email, text, positiveInt, canTransition,
+  requireFields, oneOf, isEmail, email, text, positiveInt, bool, canTransition,
 };

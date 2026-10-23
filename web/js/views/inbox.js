@@ -41,12 +41,14 @@ export function renderInbox(container, ctx, options = {}) {
     categories: [],
     unread: new Set(),
     typingName: null,
-    typingTimer: null,
+    typingStopTimer: null,
+    typingClearTimer: null,
     internal: false,
     draft: '',
     attachments: [],
     sending: false,
     cannedOpen: false,
+    selectToken: 0,
   };
 
   container.innerHTML = `
@@ -162,12 +164,14 @@ export function renderInbox(container, ctx, options = {}) {
     try {
       const data = await api('/api/tickets?limit=100');
       const incoming = data.tickets || [];
-      const currentIds = new Set(incoming.map((t) => t.id));
-      // keep locally cached tickets that momentarily disappear from a filtered response
-      state.tickets = incoming.map((t) => {
-        const existing = state.tickets.find((x) => x.id === t.id);
-        return existing ? { ...existing, ...t } : t;
-      }).filter((t) => currentIds.has(t.id));
+      const incomingById = new Map(incoming.map((t) => [t.id, t]));
+      // Preserve transient client-side fields that are not part of the REST payload.
+      state.tickets = state.tickets
+        .filter((t) => incomingById.has(t.id))
+        .map((t) => ({ ...t, ...incomingById.get(t.id) }));
+      for (const ticket of incoming) {
+        if (!state.tickets.some((t) => t.id === ticket.id)) state.tickets.push(ticket);
+      }
       sortTickets();
       renderList();
       updateNavCount();
@@ -177,14 +181,18 @@ export function renderInbox(container, ctx, options = {}) {
   async function resync() {
     await refreshTickets();
     if (!state.current) return;
+    const id = state.current.id;
+    const token = state.selectToken;
     try {
       const lastSeq = state.messages.reduce((max, m) => Math.max(max, m.seq || 0), 0);
-      const data = await api(`/api/tickets/${state.current.id}/messages?after_seq=${lastSeq}`);
+      const data = await api(`/api/tickets/${id}/messages?after_seq=${lastSeq}`);
+      if (token !== state.selectToken) return;
       if ((data.messages || []).length) {
         mergeMessages(data.messages);
         renderMessages();
       }
-      const fresh = await api(`/api/tickets/${state.current.id}`);
+      const fresh = await api(`/api/tickets/${id}`);
+      if (token !== state.selectToken) return;
       const prev = state.current;
       state.current = fresh.ticket;
       if (prev.status !== fresh.ticket.status || prev.priority !== fresh.ticket.priority
@@ -293,6 +301,7 @@ export function renderInbox(container, ctx, options = {}) {
   // ------------------------------------------------------------- detail
   async function selectTicket(id, opts = {}) {
     if (!id) return;
+    const token = ++state.selectToken;
     if (state.currentId && state.currentId !== id) {
       sock.emit('ticket:leave', { ticket_id: state.currentId });
     }
@@ -316,6 +325,7 @@ export function renderInbox(container, ctx, options = {}) {
         isStaff ? api(`/api/tickets/${id}/events`) : Promise.resolve({ events: [] }),
       ];
       const [ticketRes, messagesRes, eventsRes] = await Promise.all(tasks);
+      if (token !== state.selectToken) return;
       state.current = ticketRes.ticket;
       state.messages = messagesRes.messages || [];
       state.events = eventsRes.events || [];
@@ -327,6 +337,7 @@ export function renderInbox(container, ctx, options = {}) {
         const lastSeq = state.messages.reduce((max, m) => Math.max(max, m.seq || 0), 0);
         try {
           const ack = await sock.emitAck('ticket:join', { ticket_id: id, last_seq: lastSeq });
+          if (token !== state.selectToken) return;
           if (ack && ack.ok) {
             if (ack.ticket) state.current = ack.ticket;
             mergeMessages(ack.messages || []);
@@ -335,6 +346,7 @@ export function renderInbox(container, ctx, options = {}) {
         } catch { /* REST already loaded */ }
       }
     } catch (err) {
+      if (token !== state.selectToken) return;
       refs.chatCol.innerHTML = `<div class="chat-empty"><div><h3>Tidak dapat memuat tiket</h3>
         <p>${esc(err.message)}</p></div></div>`;
       toast(err.message, 'error');
@@ -733,8 +745,8 @@ export function renderInbox(container, ctx, options = {}) {
   function typingSignal() {
     if (!sock.isConnected() || !state.current) return;
     sock.emit('typing', { ticket_id: state.current.id, is_typing: true });
-    clearTimeout(state.typingTimer);
-    state.typingTimer = setTimeout(() => {
+    clearTimeout(state.typingStopTimer);
+    state.typingStopTimer = setTimeout(() => {
       sock.emit('typing', { ticket_id: state.current.id, is_typing: false });
     }, 2500);
   }
@@ -959,13 +971,9 @@ export function renderInbox(container, ctx, options = {}) {
         sortTickets();
         renderList();
       } else if (isStaff) {
-        api('/api/tickets?limit=100').then((data) => {
-          state.tickets = data.tickets || [];
-          sortTickets();
-          renderList();
-        }).catch(() => {});
+        refreshTickets();
       }
-      if (message.sender_type !== 'customer' && isStaff) {
+      if (message.sender_type === 'customer' && isStaff) {
         toast(`Pesan baru dari ${message.sender_name || 'customer'}`, 'info');
       }
     }
@@ -977,9 +985,9 @@ export function renderInbox(container, ctx, options = {}) {
     state.typingName = payload.is_typing ? payload.name : null;
     const typing = qs('#typing-ind', refs.chatCol);
     if (typing) typing.textContent = state.typingName ? `${state.typingName} sedang mengetik...` : '';
-    clearTimeout(state.typingTimer);
+    clearTimeout(state.typingClearTimer);
     if (payload.is_typing) {
-      state.typingTimer = setTimeout(() => {
+      state.typingClearTimer = setTimeout(() => {
         state.typingName = null;
         const elx = qs('#typing-ind', refs.chatCol);
         if (elx) elx.textContent = '';
@@ -1018,6 +1026,8 @@ export function renderInbox(container, ctx, options = {}) {
   function cleanup() {
     unsubs.forEach((fn) => fn && fn());
     window.removeEventListener('helpdesk:resync', resync);
+    clearTimeout(state.typingStopTimer);
+    clearTimeout(state.typingClearTimer);
     if (state.currentId) sock.emit('ticket:leave', { ticket_id: state.currentId });
   }
 

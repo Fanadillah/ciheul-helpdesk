@@ -155,6 +155,7 @@
     + '.meta{font-size:10px;color:#94a3b8;margin-top:4px;display:flex;gap:6px;align-items:center;}'
     + '.msg.me .meta{justify-content:flex-end;}'
     + '.pending{opacity:.65;}'
+    + '.queued .meta{color:#b45309;}'
     + '.failed .meta{color:#ef4444;cursor:pointer;}'
     + '.sys{text-align:center;font-size:11px;color:#64748b;background:#eef2f7;border-radius:8px;padding:5px 10px;'
     + 'margin:8px auto;max-width:90%;}'
@@ -313,9 +314,15 @@
       if (m.sender_type === 'system') return '<div class="sys">' + esc(m.body) + '</div>';
       var mine = m.sender_type === 'customer';
       var status = '';
-      if (mine && m._pending) status = m._failed ? '<span>Gagal terkirim - klik untuk coba lagi</span>' : '<span>Mengirim...</span>';
-      if (mine && !m._pending) status = '<span>Teririm</span>';
-      return '<div class="msg ' + (mine ? 'me' : 'them') + (m._pending ? ' pending' : '') + (m._failed ? ' failed' : '') + '"'
+      if (mine) {
+        if (m._failed) status = '<span class="failed-label">Gagal terkirim - klik untuk coba lagi</span>';
+        else if (m._queued) status = '<span>Menunggu koneksi...</span>';
+        else if (m._pending) status = '<span>Mengirim...</span>';
+        else status = '<span>Terkirim</span>';
+      }
+      var cls = [mine ? 'me' : 'them', m._pending ? 'pending' : '', m._queued ? 'queued' : '', m._failed ? 'failed' : '']
+        .filter(Boolean).join(' ');
+      return '<div class="msg ' + cls + '"'
         + ' data-mid="' + esc(m.id || m.client_message_id || '') + '"'
         + (m._failed ? ' data-act="retry"' : '') + '>'
         + '<div class="mav">' + esc(initials(m.sender_name || (mine ? state.user && state.user.name : 'CS'))) + '</div>'
@@ -331,7 +338,7 @@
       return '<div class="welcome"><div class="big">&#128172;</div><h4>Halo' + (state.user ? ', ' + esc(state.user.name.split(' ')[0]) : '')
         + '!</h4><p>Ada yang bisa kami bantu? Kirim pesan pertama Anda dan tim support akan segera merespons.</p></div>';
     }
-    return (rows ? '<div class="sys">Percakapan terenkripsi dan tersimpan otomatis</div>' + rows : '') + typing;
+    return (rows ? '<div class="sys">Percakapan tersimpan otomatis</div>' + rows : '') + typing;
   }
 
   function composerNode() {
@@ -488,7 +495,7 @@
       } else {
         state.ticket = cachedTicket;
         state.messages = cachedTicket ? read(ticketCacheKey(cachedTicket.id), []) : [];
-        state.view = cachedTicket ? 'chat' : 'chat';
+        state.view = 'chat';
       }
     } finally {
       state.loading = false;
@@ -606,22 +613,32 @@
       });
       reconcile(clientId, { message_id: data.message.id, seq: data.message.seq, created_at: data.message.created_at });
     } catch (err) {
-      if (err.status === 401 || err.status === 400 || err.status === 403) markFailed(clientId, err.message);
+      if (err.status === 401) {
+        resetSession();
+        return;
+      }
+      if (err.status && err.status < 500 && err.status !== 429) markFailed(clientId, err.message);
       else queueMessage(payload, clientId);
     }
   }
 
   function reconcile(clientId, ack) {
-    var previous = state.messages.find(function (m) { return m.client_message_id === clientId; });
-    var body = previous ? previous.body : '';
-    state.messages = state.messages.filter(function (m) {
-      return !(m.client_message_id === clientId && m._pending);
-    });
-    var fresh = state.messages.find(function (m) { return m.client_message_id === clientId; });
-    if (!fresh) {
+    var existing = state.messages.find(function (m) { return m.client_message_id === clientId; });
+    if (existing) {
+      Object.assign(existing, {
+        id: ack.message_id || existing.id,
+        seq: ack.seq || existing.seq,
+        created_at: ack.created_at || existing.created_at,
+        _pending: false,
+        _queued: false,
+        _failed: false,
+        _error: null,
+      });
+    } else {
+      var queued = state.queue.find(function (q) { return q.client_message_id === clientId; });
       state.messages.push({
         id: ack.message_id, client_message_id: clientId, sender_type: 'customer',
-        sender_name: state.user ? state.user.name : 'Anda', body: body,
+        sender_name: state.user ? state.user.name : 'Anda', body: queued ? queued.body : '',
         created_at: ack.created_at || new Date().toISOString(), seq: ack.seq,
       });
     }
@@ -633,17 +650,19 @@
 
   function markFailed(clientId, message) {
     state.messages = state.messages.map(function (m) {
-      if (m.client_message_id === clientId) return Object.assign({}, m, { _pending: false, _failed: true });
+      if (m.client_message_id === clientId) {
+        return Object.assign({}, m, { _pending: false, _queued: false, _failed: true, _error: message });
+      }
       return m;
     });
-    var failed = state.messages.find(function (m) { return m.client_message_id === clientId; });
-    if (failed) failed._error = message;
     render();
   }
 
   function queueMessage(payload, clientId) {
     state.messages = state.messages.map(function (m) {
-      if (m.client_message_id === clientId) return Object.assign({}, m, { _pending: false, _queued: true });
+      if (m.client_message_id === clientId) {
+        return Object.assign({}, m, { _pending: false, _queued: true, _failed: false, _error: null });
+      }
       return m;
     });
     if (!state.queue.some(function (q) { return q.client_message_id === clientId; })) {
@@ -654,46 +673,77 @@
   }
 
   async function flushQueue() {
-    if (!state.queue.length || !state.ticket) return;
+    if (!state.queue.length || !state.token) return;
     var pending = state.queue.slice();
     for (var i = 0; i < pending.length; i += 1) {
       var item = pending[i];
-      if (item.ticket_id !== state.ticket.id) {
-        state.queue = state.queue.filter(function (q) { return q.client_message_id !== item.client_message_id; });
-        continue;
-      }
       await new Promise(function (resolve) {
         if (state.socket && state.connected) {
           state.socket.timeout(8000).emit('message:send', item, function (err, ack) {
             if (!err && ack && ack.ok) {
-              reconcile(item.client_message_id, ack);
-              state.queue = state.queue.filter(function (q) { return q.client_message_id !== item.client_message_id; });
+              removeQueued(item.client_message_id);
+              if (state.ticket && item.ticket_id === state.ticket.id) {
+                reconcile(item.client_message_id, ack);
+              }
             }
             resolve();
           });
-        } else {
-          fetch(API + '/api/tickets/' + item.ticket_id + '/messages', {
-            method: 'POST',
-            headers: { 'content-type': 'application/json', authorization: 'Bearer ' + state.token },
-            body: JSON.stringify(item),
-          }).then(function (res) {
-            if (res.ok) {
-              state.queue = state.queue.filter(function (q) { return q.client_message_id !== item.client_message_id; });
-            }
-            resolve();
-          }).catch(function () { resolve(); });
+          return;
         }
+        fetch(API + '/api/tickets/' + item.ticket_id + '/messages', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: 'Bearer ' + state.token },
+          body: JSON.stringify(item),
+        }).then(function (res) {
+          if (res.status === 401) {
+            resetSession();
+            resolve();
+            return;
+          }
+          if (res.ok) {
+            removeQueued(item.client_message_id);
+            if (state.ticket && item.ticket_id === state.ticket.id) joinTicket();
+          }
+          resolve();
+        }).catch(function () { resolve(); });
       });
     }
     write('queue', state.queue);
     render();
   }
 
+  function removeQueued(clientId) {
+    state.queue = state.queue.filter(function (q) { return q.client_message_id !== clientId; });
+    write('queue', state.queue);
+  }
+
+  function resetSession() {
+    state.token = null;
+    state.user = null;
+    state.ticket = null;
+    state.messages = [];
+    state.queue = [];
+    state.view = 'prechat';
+    remove('token'); remove('user'); remove('ticket');
+    write('queue', []);
+    if (state.socket) {
+      try { state.socket.disconnect(); } catch (e) { /* ignore */ }
+      state.socket = null;
+    }
+    state.connected = false;
+    render();
+  }
+
   function retryMessage(clientId) {
     var failed = state.messages.find(function (m) { return m.client_message_id === clientId; });
-    if (!failed || !state.ticket) return;
+    if (!failed) return;
     state.messages = state.messages.filter(function (m) { return m.client_message_id !== clientId; });
-    state.messages.push(Object.assign({}, failed, { _pending: true, _failed: false }));
+    if (!state.ticket) {
+      render();
+      sendMessage(failed.body);
+      return;
+    }
+    state.messages.push(Object.assign({}, failed, { _pending: true, _failed: false, _queued: false }));
     render();
     deliver({ ticket_id: state.ticket.id, body: failed.body, client_message_id: clientId }, clientId);
   }
@@ -716,6 +766,9 @@
   }
 
   function startNewChat() {
+    if (state.socket && state.ticket) {
+      state.socket.emit('ticket:leave', { ticket_id: state.ticket.id });
+    }
     state.ticket = null;
     state.messages = [];
     remove('ticket');

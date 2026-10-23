@@ -40,6 +40,7 @@ class AppState extends ChangeNotifier {
   String? activeTicketId;
   bool refreshing = false;
   bool _socketListening = false;
+  bool _flushing = false;
 
   bool get isStaff => user?.isStaff ?? false;
   bool get connected => socket.isConnected;
@@ -107,6 +108,7 @@ class AppState extends ChangeNotifier {
     }
     notificationService.init(requestPermission: true);
     loadAll();
+    unawaited(flushQueue());
   }
 
   Future<void> loadAll() async {
@@ -127,6 +129,8 @@ class AppState extends ChangeNotifier {
       tickets = list.map((t) => Ticket.fromJson(Map<String, dynamic>.from(t as Map))).toList();
     } on ApiException catch (err) {
       if (err.isUnauthorized) await logout(notice: 'Sesi berakhir. Silakan login kembali.');
+    } catch (_) {
+      // keep the last good snapshot when a response cannot be parsed
     } finally {
       refreshing = false;
       notifyListeners();
@@ -235,7 +239,7 @@ class AppState extends ChangeNotifier {
         await logout(notice: 'Sesi berakhir. Silakan login kembali.');
         return SendOutcome(error: err.message);
       }
-      if (err.isNetwork) {
+      if (err.isNetwork || err.status >= 500 || err.status == 429) {
         await _enqueue({...payload, 'ticket_id': ticketId});
         return const SendOutcome(queued: true);
       }
@@ -254,30 +258,44 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> flushQueue() async {
-    if (user == null || !socket.isConnected) return;
-    final queue = await _store.queue();
-    if (queue.isEmpty) return;
-    final remaining = <Map<String, dynamic>>[];
-    var sent = 0;
-    for (final item in queue) {
-      try {
-        await api.post('/api/tickets/${item['ticket_id']}/messages', body: {
-          'body': item['body'],
-          'client_message_id': item['client_message_id'],
-          'is_internal': item['is_internal'] ?? false,
-        });
-        sent += 1;
-      } on ApiException catch (err) {
-        if (err.isNetwork) remaining.add(item);
-        // drop messages the server rejects (closed ticket, validation, auth)
+    if (user == null || _flushing || api.token == null) return;
+    _flushing = true;
+    try {
+      final queue = await _store.queue();
+      if (queue.isEmpty) {
+        pendingMessages = 0;
+        return;
       }
+      final remaining = <Map<String, dynamic>>[];
+      var sent = 0;
+      for (final item in queue) {
+        try {
+          await api.post('/api/tickets/${item['ticket_id']}/messages', body: {
+            'body': item['body'],
+            'client_message_id': item['client_message_id'],
+            'is_internal': item['is_internal'] ?? false,
+          });
+          sent += 1;
+        } on ApiException catch (err) {
+          if (err.isUnauthorized) {
+            await logout(notice: 'Sesi berakhir. Silakan login kembali.');
+            return;
+          }
+          if (err.isNetwork || err.status >= 500 || err.status == 429) {
+            remaining.add(item);
+          }
+          // Messages rejected by validation are dropped so the queue can drain.
+        } catch (_) {
+          remaining.add(item);
+        }
+      }
+      await _store.saveQueue(remaining);
+      pendingMessages = remaining.length;
+      if (sent > 0) await refreshTickets();
+    } finally {
+      _flushing = false;
+      notifyListeners();
     }
-    await _store.saveQueue(remaining);
-    pendingMessages = remaining.length;
-    if (sent > 0) {
-      await refreshTickets();
-    }
-    notifyListeners();
   }
 
   Future<Ticket> patchTicket(String ticketId, Map<String, dynamic> patch) async {
@@ -423,7 +441,12 @@ class AppState extends ChangeNotifier {
         if (!notificationList.any((n) => n.id == notification.id)) {
           notificationList.insert(0, notification);
         }
-        notificationService.show(notification.title, 'Buka aplikasi untuk melihat detail.');
+        final duplicateOfOpenChat = notification.type == 'message' &&
+            notification.ticketId != null &&
+            notification.ticketId == activeTicketId;
+        if (!duplicateOfOpenChat) {
+          notificationService.show(notification.title, 'Buka aplikasi untuk melihat detail.');
+        }
         notifyListeners();
         break;
       default:

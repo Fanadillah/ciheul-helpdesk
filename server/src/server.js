@@ -1,20 +1,20 @@
 'use strict';
 
 const http = require('http');
+const express = require('express');
 const { Server } = require('socket.io');
 const config = require('./config');
 const { openDb } = require('./db');
 const { seed } = require('./db/seed');
 const { registerMiddleware, registerRoutes } = require('./app');
 const attachRealtime = require('./realtime/socket');
+const { emitTicket, notifyUser } = require('./realtime/events');
 const tickets = require('./services/tickets');
-const { createNotification } = require('./services/notifications');
 
-function startSlaWatcher(db, io) {
+function startMaintenance(db, io) {
   const timer = setInterval(() => {
     try {
-      const breaches = tickets.sweepSla(db);
-      for (const { ticket, kind } of breaches) {
+      for (const { ticket, kind } of tickets.sweepSla(db)) {
         const title = kind === 'first_response'
           ? `SLA first response terlampaui: ${ticket.code}`
           : `SLA resolusi terlampaui: ${ticket.code}`;
@@ -22,14 +22,21 @@ function startSlaWatcher(db, io) {
         const staff = db.prepare(`SELECT id FROM users
           WHERE is_active = 1 AND role IN ('supervisor','agent')`).all();
         for (const row of staff) {
-          const notif = createNotification(db, { userId: row.id, type: 'sla_breach', title, payload });
-          io.to(`user:${row.id}`).emit('notification:new', notif);
+          notifyUser(io, db, row.id, 'sla_breach', title, payload);
         }
         io.to('staff').emit('sla:breach', { ticket, kind });
-        io.to(`ticket:${ticket.id}`).emit('ticket:update', ticket);
+        emitTicket(io, ticket);
+      }
+
+      if (config.autoCloseEnabled) {
+        for (const ticket of tickets.autoCloseResolved(db, config.autoCloseDays)) {
+          emitTicket(io, ticket);
+          notifyUser(io, db, ticket.customer_id, 'ticket_status',
+            `Tiket ${ticket.code} ditutup otomatis`, { ticket_id: ticket.id, status: 'closed' });
+        }
       }
     } catch (err) {
-      console.error('[sla] watcher failed', err);
+      console.error('[maintenance] scheduled job failed', err);
     }
   }, config.slaTickMs);
   timer.unref();
@@ -41,7 +48,7 @@ function buildServer(options = {}) {
   const empty = !db.prepare('SELECT 1 FROM users LIMIT 1').get();
   if (options.seed === true || (options.seed !== false && empty)) seed(db);
 
-  const app = expressApp();
+  const app = express();
   const httpServer = http.createServer(app);
   const io = new Server(httpServer, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
@@ -53,7 +60,7 @@ function buildServer(options = {}) {
   registerMiddleware(app, db);
   registerRoutes(app, db, io);
   attachRealtime(io, db);
-  const slaTimer = options.sla === false ? null : startSlaWatcher(db, io);
+  const maintenanceTimer = options.sla === false ? null : startMaintenance(db, io);
 
   return {
     app,
@@ -65,16 +72,11 @@ function buildServer(options = {}) {
       return httpServer.address().port;
     },
     async close() {
-      if (slaTimer) clearInterval(slaTimer);
+      if (maintenanceTimer) clearInterval(maintenanceTimer);
       await new Promise((resolve) => io.close(resolve));
       db.close();
     },
   };
-}
-
-function expressApp() {
-  // small indirection so tests can import buildServer without starting a listener
-  return require('express')();
 }
 
 module.exports = { buildServer };

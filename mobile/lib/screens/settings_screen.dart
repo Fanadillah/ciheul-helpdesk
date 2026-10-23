@@ -235,7 +235,7 @@ class SettingsScreen extends StatelessWidget {
                 Divider(),
                 _Tile(
                   icon: Icons.bolt_rounded,
-                  title: 'Dibangun untuk technical test',
+                  title: 'Dibangun untuk tim support',
                   subtitle: 'Realtime chat, antrean offline, dan notifikasi lokal',
                 ),
                 Divider(),

@@ -19,14 +19,24 @@ function asyncHandler(fn) {
 }
 
 function errorMiddleware(err, req, res, _next) {
-  const status = err.status || 500;
+  if (res.headersSent) return _next(err);
+  let status = err.status || 500;
+  let message = err.message;
+
+  if (err.name === 'MulterError') {
+    status = 400;
+    message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'Ukuran file maksimal 5 MB'
+      : 'File tidak dapat diunggah';
+  }
+
   if (status >= 500) {
     // keep the stack in the server log, never leak it to clients
     console.error('[error]', err);
   }
   res.status(status).json({
     error: {
-      message: status >= 500 ? 'Terjadi kesalahan pada server' : err.message,
+      message: status >= 500 ? 'Terjadi kesalahan pada server' : message,
       details: err.details || undefined,
     },
   });

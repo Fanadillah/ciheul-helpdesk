@@ -14,6 +14,8 @@ Deliverable Soal 1 (Analysis) untuk Take Home Programming Test Software Engineer
 | File | Deskripsi |
 |---|---|
 | [`ANALISIS.md`](ANALISIS.md) | Analisis proses bisnis, aktor & RBAC, arsitektur realtime, rencana skema DB, event contract, keputusan desain |
+| [`PANDUAN-PROYEK.md`](PANDUAN-PROYEK.md) | Panduan lengkap fitur, arsitektur, alasan teknologi, demo, dan persiapan interview |
+| [`QA.md`](QA.md) | Hasil automated test, E2E manual, dan catatan audit kualitas |
 | [`BPMN-Helpdesk.drawio`](BPMN-Helpdesk.drawio) | Sumber diagram yang dapat diedit (draw.io / diagrams.net) |
 | [`assets/bpmn-helpdesk.svg`](assets/bpmn-helpdesk.svg) | Sumber vektor BPMN (dipakai untuk export PDF) |
 

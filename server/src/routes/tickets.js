@@ -11,19 +11,8 @@ const { uuid, now } = require('../utils/ids');
 const { isStaff, assertTicketAccess } = require('../services/access');
 const tickets = require('../services/tickets');
 const messages = require('../services/messages');
-const { createNotification } = require('../services/notifications');
+const { emitTicket, notifyUser } = require('../realtime/events');
 const { generateFirstReply } = require('../services/ai');
-
-function emitTicket(io, ticket) {
-  io.to(`ticket:${ticket.id}`).emit('ticket:update', ticket);
-  io.to('staff').except(`ticket:${ticket.id}`).emit('ticket:update', ticket);
-}
-
-function notify(io, db, userId, type, title, payload) {
-  if (!userId) return;
-  const row = createNotification(db, { userId, type, title, payload });
-  io.to(`user:${userId}`).emit('notification:new', row);
-}
 
 module.exports = function ticketRoutes(db, io) {
   const router = express.Router();
@@ -43,6 +32,16 @@ module.exports = function ticketRoutes(db, io) {
     },
   });
 
+  // Authorize before Multer writes anything to disk.
+  const ticketMember = (req, res, next) => {
+    try {
+      assertTicketAccess(db, req.user, req.params.id);
+      next();
+    } catch (err) {
+      next(err);
+    }
+  };
+
   router.get('/', (req, res) => {
     res.json({ tickets: tickets.listTickets(db, req.user, req.query) });
   });
@@ -60,14 +59,15 @@ module.exports = function ticketRoutes(db, io) {
     });
 
     io.to('staff').emit('ticket:created', ticket);
-    notify(io, db, ticket.assignee_id, 'ticket_assigned',
+    notifyUser(io, db, ticket.assignee_id, 'ticket_assigned',
       `Tiket baru: ${ticket.subject}`, { ticket_id: ticket.id });
 
     if (config.aiAutoReply) {
       setTimeout(async () => {
         try {
           const current = db.prepare('SELECT * FROM tickets WHERE id = ?').get(ticket.id);
-          if (!current || ['resolved', 'closed'].includes(current.status)) return;
+          // Never let an AI message land after a human already answered.
+          if (!current || current.first_response_at || ['resolved', 'closed'].includes(current.status)) return;
           const history = messages.listMessages(db, ticket.id, { includeInternal: false })
             .slice(-6)
             .map((m) => ({ role: m.sender_type === 'customer' ? 'user' : 'assistant', content: m.body }));
@@ -105,11 +105,11 @@ module.exports = function ticketRoutes(db, io) {
     emitTicket(io, ticket);
 
     if (patch.status && ['resolved', 'closed'].includes(patch.status)) {
-      notify(io, db, ticket.customer_id, 'ticket_status',
+      notifyUser(io, db, ticket.customer_id, 'ticket_status',
         `Tiket ${ticket.code} ${patch.status}`, { ticket_id: ticket.id, status: patch.status });
     }
     if (patch.assignee_id && patch.assignee_id !== before.assignee_id) {
-      notify(io, db, patch.assignee_id, 'ticket_assigned',
+      notifyUser(io, db, patch.assignee_id, 'ticket_assigned',
         `Tiket ditugaskan: ${ticket.subject}`, { ticket_id: ticket.id });
     }
     res.json({ ticket });
@@ -175,15 +175,20 @@ module.exports = function ticketRoutes(db, io) {
     res.json({ events: tickets.getEvents(db, req.params.id) });
   });
 
-  router.post('/:id/attachments', upload.single('file'), asyncHandler(async (req, res) => {
-    assertTicketAccess(db, req.user, req.params.id);
+  router.post('/:id/attachments', ticketMember, upload.single('file'), asyncHandler(async (req, res) => {
     if (!req.file) throw badRequest('File wajib diunggah');
     const id = uuid();
-    db.prepare(`INSERT INTO attachments
-      (id, ticket_id, uploader_id, stored_name, original_name, mime, size, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
-      .run(id, req.params.id, req.user.id, req.file.filename,
-        req.file.originalname, req.file.mimetype, req.file.size, now());
+    try {
+      db.prepare(`INSERT INTO attachments
+        (id, ticket_id, uploader_id, stored_name, original_name, mime, size, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(id, req.params.id, req.user.id, req.file.filename,
+          req.file.originalname, req.file.mimetype, req.file.size, now());
+    } catch (err) {
+      // Do not leave an orphan file behind when metadata cannot be stored.
+      fs.unlink(req.file.path, () => {});
+      throw err;
+    }
     res.status(201).json({
       attachment: {
         id, original_name: req.file.originalname, mime: req.file.mimetype, size: req.file.size,

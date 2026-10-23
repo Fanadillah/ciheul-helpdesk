@@ -7,12 +7,14 @@ process.env.JWT_SECRET = 'helpdesk-test-secret';
 const request = require('supertest');
 const { io: ioClient } = require('socket.io-client');
 const { buildServer } = require('../src/server');
+const ticketsService = require('../src/services/tickets');
 
 let server;
 let app;
 let baseUrl;
 let tokens;
 let agentId;
+let adminId;
 let categoryId;
 
 async function login(email, password) {
@@ -100,6 +102,8 @@ beforeAll(async () => {
 
   const me = await request(app).get('/api/auth/me').set(authed(tokens.agent)).expect(200);
   agentId = me.body.user.id;
+  const adminMe = await request(app).get('/api/auth/me').set(authed(tokens.admin)).expect(200);
+  adminId = adminMe.body.user.id;
 
   const categories = await request(app).get('/api/public/categories').expect(200);
   categoryId = categories.body.categories[0].id;
@@ -252,6 +256,25 @@ describe('ticket lifecycle over REST', () => {
     expect(reopened.body.ticket.status).toBe('in_progress');
   });
 
+  it('scopes message idempotency to one ticket', async () => {
+    const firstTicket = await smokeTicket(tokens.customer, 'Idempotensi tiket A');
+    const secondTicket = await smokeTicket(tokens.customer, 'Idempotensi tiket B');
+    const clientMessageId = 'shared-client-id-across-tickets';
+
+    await request(app)
+      .post(`/api/tickets/${firstTicket.id}/messages`)
+      .set(authed(tokens.customer))
+      .send({ body: 'Pesan pada tiket A', client_message_id: clientMessageId })
+      .expect(201);
+
+    const conflict = await request(app)
+      .post(`/api/tickets/${secondTicket.id}/messages`)
+      .set(authed(tokens.customer))
+      .send({ body: 'Pesan pada tiket B', client_message_id: clientMessageId })
+      .expect(409);
+    expect(conflict.body.error.message).toMatch(/client_message_id/i);
+  });
+
   it('enforces reports permissions', async () => {
     await request(app)
       .get('/api/reports/summary')
@@ -276,6 +299,77 @@ describe('ticket lifecycle over REST', () => {
       .set(authed(tokens.agent))
       .expect(200);
     expect(users.body.users.length).toBeGreaterThan(0);
+  });
+
+  it('restricts user and category management to the right roles', async () => {
+    await request(app)
+      .post('/api/users')
+      .set(authed(tokens.agent))
+      .send({ name: 'Agent Palsu', email: 'fake-agent@example.com', role: 'admin', password: 'Agent123!' })
+      .expect(403);
+
+    await request(app)
+      .get('/api/users')
+      .set(authed(tokens.customer))
+      .expect(403);
+
+    await request(app)
+      .get('/api/categories')
+      .set(authed(tokens.customer))
+      .expect(403);
+
+    const created = await request(app)
+      .post('/api/users')
+      .set(authed(tokens.admin))
+      .send({ name: 'Agent QA', email: 'agent-qa@example.com', role: 'agent', password: 'AgentQA123!' })
+      .expect(201);
+    expect(created.body.user.email).toBe('agent-qa@example.com');
+    expect(created.body.user.password_hash).toBeUndefined();
+
+    // an admin cannot accidentally demote or deactivate their own account
+    await request(app)
+      .patch(`/api/users/${adminId}`)
+      .set(authed(tokens.admin))
+      .send({ role: 'agent' })
+      .expect(400);
+    await request(app)
+      .patch(`/api/users/${adminId}`)
+      .set(authed(tokens.admin))
+      .send({ is_active: false })
+      .expect(400);
+
+    const categories = await request(app)
+      .get('/api/categories')
+      .set(authed(tokens.admin))
+      .expect(200);
+    const category = categories.body.categories[0];
+    await request(app)
+      .patch(`/api/categories/${category.id}`)
+      .set(authed(tokens.admin))
+      .send({ first_response_min: -5 })
+      .expect(400);
+    await request(app)
+      .patch(`/api/categories/${category.id}`)
+      .set(authed(tokens.agent))
+      .send({ first_response_min: 10 })
+      .expect(403);
+  });
+
+  it('auto-closes resolved tickets after the configured window', async () => {
+    const ticket = await smokeTicket(tokens.customer, 'Tiket untuk auto-close');
+    const old = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000).toISOString();
+    server.db.prepare(`UPDATE tickets SET status = 'resolved', resolved_at = ?, updated_at = ?
+      WHERE id = ?`).run(old, old, ticket.id);
+
+    const closed = ticketsService.autoCloseResolved(server.db, 7);
+    expect(closed.some((item) => item.id === ticket.id)).toBe(true);
+
+    const stored = server.db.prepare('SELECT status, closed_at FROM tickets WHERE id = ?').get(ticket.id);
+    expect(stored.status).toBe('closed');
+    expect(stored.closed_at).toBeTruthy();
+
+    // a second sweep must not produce duplicate events
+    expect(ticketsService.autoCloseResolved(server.db, 7).some((item) => item.id === ticket.id)).toBe(false);
   });
 });
 

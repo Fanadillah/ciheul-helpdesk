@@ -1,6 +1,6 @@
 'use strict';
 
-const { badRequest, notFound } = require('../utils/errors');
+const { badRequest, conflict, notFound } = require('../utils/errors');
 const { uuid, now } = require('../utils/ids');
 const { logEvent } = require('./tickets');
 
@@ -35,8 +35,14 @@ function appendMessage(db, input) {
   if (!ticket) throw notFound('Tiket tidak ditemukan');
 
   if (clientMessageId) {
-    const existing = db.prepare('SELECT * FROM ticket_messages WHERE client_message_id = ?').get(clientMessageId);
+    const existing = db.prepare(`SELECT * FROM ticket_messages
+      WHERE ticket_id = ? AND client_message_id = ?`).get(ticketId, clientMessageId);
     if (existing) return { message: hydrate(db, existing), duplicate: true };
+
+    // client_message_id is globally unique in the schema; report a clear
+    // conflict instead of leaking a message from another ticket.
+    const clash = db.prepare('SELECT 1 FROM ticket_messages WHERE client_message_id = ?').get(clientMessageId);
+    if (clash) throw conflict('client_message_id sudah digunakan pada tiket lain');
   }
 
   const senderType = input.senderType

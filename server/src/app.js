@@ -45,7 +45,7 @@ function registerRoutes(app, db, io) {
   app.use('/api', requireAuth(db));
 
   app.use('/api/tickets', ticketRoutes(db, io));
-  app.get('/api/attachments/:id', requireAuth(db), ticketRoutes.attachmentDownload(db));
+  app.get('/api/attachments/:id', ticketRoutes.attachmentDownload(db));
   app.use('/api', adminRoutes(db));
   app.use('/api/reports', reportRoutes(db));
   app.use('/api/notifications', notificationRoutes(db));

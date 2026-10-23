@@ -19,7 +19,7 @@ export function renderLogin(root, onSuccess) {
              dengan widget website dan aplikasi mobile.</p>
           <div class="login-points">
             <div class="login-point"><i>&#10003;</i><span>Live chat realtime dengan antrean offline</span></div>
-            <div class="login-point"><i>&#10003;</i><span>SLA monitoring dan eskalasi otomatis</span></div>
+            <div class="login-point"><i>&#10003;</i><span>SLA monitoring dan notifikasi pelanggaran</span></div>
             <div class="login-point"><i>&#10003;</i><span>AI auto-reply dengan knowledge base</span></div>
             <div class="login-point"><i>&#10003;</i><span>CSAT, laporan agent, dan audit trail</span></div>
           </div>

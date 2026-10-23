@@ -280,6 +280,7 @@ class Message {
   final List<Attachment> attachments;
   final bool pending;
   final bool failed;
+  final bool queued;
 
   const Message({
     required this.id,
@@ -295,6 +296,7 @@ class Message {
     this.attachments = const [],
     this.pending = false,
     this.failed = false,
+    this.queued = false,
   });
 
   bool get isCustomer => senderType == 'customer';
@@ -316,7 +318,7 @@ class Message {
             .toList(),
       );
 
-  Message copyWith({bool? pending, bool? failed, int? seq, String? id}) => Message(
+  Message copyWith({bool? pending, bool? failed, bool? queued, int? seq, String? id}) => Message(
         id: id ?? this.id,
         ticketId: ticketId,
         senderId: senderId,
@@ -330,6 +332,7 @@ class Message {
         attachments: attachments,
         pending: pending ?? this.pending,
         failed: failed ?? this.failed,
+        queued: queued ?? this.queued,
       );
 }
 
