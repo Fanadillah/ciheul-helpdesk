@@ -52,7 +52,7 @@ Cakupan Flutter (`mobile/test/widget_test.dart`): parsing `Ticket`, status tiket
 | 7 | CSAT bintang dari widget setelah resolved | Lulus; rating tersimpan dan tampil di laporan |
 | 8 | Laporan supervisor (KPI, grafik, tabel) | Lulus; 5 KPI dan data seed tampil |
 | 9 | Admin user/category/KB | Lulus; daftar dan form tampil |
-| 10 | APK release dipasang di emulator Android 36 | Lulus; login, inbox, detail, kirim pesan, socket "Realtime" |
+| 10 | APK release dipasang di emulator Android 36 | Alur utama lulus pada build saat E2E; build final setelah perbaikan antrean/status berhasil dibangun dan lolos `flutter analyze` + `flutter test` |
 | 11 | Fresh clone dari GitHub → `npm ci` → `npm test` → server | Lulus; health, web, dan widget merespons 200 |
 | 12 | Reseed data demo (`npm run seed`) | Lulus; 4 tiket demo, 5 akun, 3 kategori |
 
