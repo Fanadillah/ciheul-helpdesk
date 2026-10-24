@@ -676,6 +676,7 @@
     if (!state.queue.length || !state.token) return;
     var pending = state.queue.slice();
     for (var i = 0; i < pending.length; i += 1) {
+      if (!state.token) break;
       var item = pending[i];
       await new Promise(function (resolve) {
         if (state.socket && state.connected) {
@@ -703,6 +704,13 @@
           if (res.ok) {
             removeQueued(item.client_message_id);
             if (state.ticket && item.ticket_id === state.ticket.id) joinTicket();
+          } else if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+            // The server rejected the message permanently; keeping it would
+            // block the queue forever. Surface the failure on the active chat.
+            removeQueued(item.client_message_id);
+            if (state.ticket && item.ticket_id === state.ticket.id) {
+              markFailed(item.client_message_id, 'Pesan ditolak server');
+            }
           }
           resolve();
         }).catch(function () { resolve(); });
