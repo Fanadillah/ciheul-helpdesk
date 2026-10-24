@@ -32,7 +32,7 @@ module.exports = function ticketRoutes(db, io) {
     },
   });
 
-  // Authorize before Multer writes anything to disk.
+  // Cek akses sebelum Multer menulis file.
   const ticketMember = (req, res, next) => {
     try {
       assertTicketAccess(db, req.user, req.params.id);
@@ -66,7 +66,7 @@ module.exports = function ticketRoutes(db, io) {
       setTimeout(async () => {
         try {
           const current = db.prepare('SELECT * FROM tickets WHERE id = ?').get(ticket.id);
-          // Never let an AI message land after a human already answered.
+          // Jangan kirim balasan AI kalau agent sudah membalas.
           if (!current || current.first_response_at || ['resolved', 'closed'].includes(current.status)) return;
           const history = messages.listMessages(db, ticket.id, { includeInternal: false })
             .slice(-6)
@@ -185,7 +185,7 @@ module.exports = function ticketRoutes(db, io) {
         .run(id, req.params.id, req.user.id, req.file.filename,
           req.file.originalname, req.file.mimetype, req.file.size, now());
     } catch (err) {
-      // Do not leave an orphan file behind when metadata cannot be stored.
+      // Hapus file kalau insert metadata gagal.
       fs.unlink(req.file.path, () => {});
       throw err;
     }

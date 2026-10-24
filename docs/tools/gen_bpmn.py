@@ -9,7 +9,7 @@ ASSETS.mkdir(parents=True, exist_ok=True)
 
 W, H = 1587, 1122
 TITLE = "BPMN Swimlane — Aplikasi Helpdesk"
-SUBTITLE = ("Alur tiket & live chat end-to-end: Customer · Live Chat System · "
+SUBTITLE = ("Alur tiket & live chat: Customer · Live Chat System · "
             "CS Agent · Supervisor · Admin")
 FONT = "Segoe UI, Arial, Helvetica, sans-serif"
 INK = "#0F172A"

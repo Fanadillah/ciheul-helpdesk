@@ -1,7 +1,7 @@
 /*!
  * Ciheul Helpdesk Live Chat Widget
  * Embed: <script src="https://your-host/widget/chat-widget.js" data-api="https://your-host" async></script>
- * Vanilla JS, Shadow DOM, Socket.IO with REST fallback + offline queue.
+ * Tanpa build step. Shadow DOM, fallback REST, dan antrean offline.
  */
 (function () {
   'use strict';
@@ -453,7 +453,7 @@
     list.forEach(function (m) {
       var key = m.id || m.client_message_id;
       if (!seen[key]) {
-        // reconcile optimistic message with the server echo
+        // Cocokkan pesan optimistis dengan echo dari server.
         var idx = state.messages.findIndex(function (x) {
           return x.client_message_id && x.client_message_id === m.client_message_id;
         });
@@ -578,7 +578,7 @@
 
     var isFirst = !state.ticket;
     if (isFirst) {
-      // the ticket description becomes the first message on the server
+      // Deskripsi tiket dipakai sebagai pesan pertama di server.
       state.messages.push(Object.assign({}, optimistic, { _pending: true }));
       render();
       try {
@@ -705,8 +705,8 @@
             removeQueued(item.client_message_id);
             if (state.ticket && item.ticket_id === state.ticket.id) joinTicket();
           } else if (res.status >= 400 && res.status < 500 && res.status !== 429) {
-            // The server rejected the message permanently; keeping it would
-            // block the queue forever. Surface the failure on the active chat.
+            // Ditolak permanen. Buang dari antrean supaya tidak nyangkut,
+            // lalu tampilkan status gagal di chat yang sedang dibuka.
             removeQueued(item.client_message_id);
             if (state.ticket && item.ticket_id === state.ticket.id) {
               markFailed(item.client_message_id, 'Pesan ditolak server');
@@ -907,7 +907,7 @@
 
   launcher.addEventListener('click', function () { state.open ? close() : open(); });
 
-  // deep-link support: ?helpdesk=open
+  // Buka widget lewat ?helpdesk=open
   if (/[?&]helpdesk=open/.test(window.location.search)) setTimeout(open, 400);
 
   window.HelpdeskWidget = {

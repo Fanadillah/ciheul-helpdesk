@@ -1,164 +1,156 @@
-# Analisis & Desain — Aplikasi Helpdesk
+# Catatan Analisis
 
-Dokumen ini melengkapi dua deliverable wajib Soal 1:
-[`BPMN-Helpdesk.pdf`](BPMN-Helpdesk.pdf) dan [`WBS-Helpdesk.xlsx`](WBS-Helpdesk.xlsx).
-Isinya menjadi acuan implementasi Soal 2 (widget, web app, mobile app).
+Ini catatan kerja untuk demo helpdesk di repo ini. Isinya alur tiket, pembagian role,
+kontrak realtime, dan struktur database yang dipakai. BPMN dan WBS ada di file terpisah.
 
-## 1. Scope
+## Ruang lingkup
 
-Aplikasi helpdesk untuk melacak kendala pelanggan dari masuk sampai selesai, dengan tiga kanal:
+Ada tiga kanal:
 
-| Kanal | Pengguna | Teknologi |
+| Kanal | Dipakai oleh | Teknis |
 |---|---|---|
-| Live Chat Widget (kanan bawah) | Customer | JavaScript, Socket.IO client |
-| Web App | CS Agent, Supervisor, Admin | JavaScript, Socket.IO client |
-| Mobile App | Customer & Agent | Flutter, `socket_io_client` |
+| Widget | customer | JavaScript, REST + Socket.IO |
+| Web | customer, agent, supervisor, admin | JavaScript tanpa build step |
+| Mobile | customer dan staff | Flutter |
 
-Di luar scope: billing/pembayaran, gudang, dan integrasi tiket pihak ketiga (Jira/Zendesk).
+Yang tidak dikerjakan: billing, gudang, integrasi Jira/Zendesk, dan multi-tenant.
 
-## 2. Aktor & hak akses
+## Role
 
-| Aktor | Tanggung jawab | Hak utama |
-|---|---|---|
-| Customer | Melaporkan kendala, berdiskusi, konfirmasi selesai | Buat tiket, kirim pesan, unggah lampiran (web), isi CSAT, reopen |
-| CS Agent | Menangani tiket, menjawab chat | Ambil/assign tiket, ubah status & prioritas, canned response, catatan internal |
-| Supervisor | Mengawasi kualitas & SLA | Pantau beban kerja, lihat laporan, tinjau CSAT rendah |
-| Admin | Mengelola konfigurasi | Kelola user & role, kategori, kebijakan SLA, knowledge base |
+| Role | Bisa melakukan |
+|---|---|
+| Customer | Buat tiket, kirim pesan, upload lampiran di web, isi CSAT, reopen |
+| Agent | Assign tiket, ubah status/prioritas, balas chat, catatan internal, canned response |
+| Supervisor | Sama seperti agent untuk tiket, plus lihat laporan dan CSAT rendah |
+| Admin | Kelola user/role, kategori dan SLA, knowledge base |
 
-RBAC diterapkan pada REST endpoint **dan** Socket.IO event, bukan hanya di UI.
+Pengecekan role ada di route dan event Socket.IO. UI hanya menyembunyikan tombol; akses tetap
+ditolak kalau endpoint dipanggil langsung.
 
-## 3. Proses bisnis
+## Alur tiket
 
-### 3.1 Alur utama (happy path)
+1. Customer membuka widget atau mobile, mengisi nama/email/kategori.
+2. Server membuat tiket. Prioritas diambil dari default kategori kalau customer tidak memilih.
+3. Tiket otomatis di-assign ke agent aktif dengan tiket terbuka paling sedikit. Kalau tidak ada
+   agent, statusnya tetap `new`.
+4. SLA first response dan resolution dihitung dari waktu pembuatan tiket.
+5. Kalau AI auto-reply aktif, server menunggu 1,2 detik lalu mengirim balasan AI. Balasan ini
+   dilewati kalau agent sudah membalas lebih dulu atau tiket sudah resolved/closed.
+6. Agent membalas, mengubah status, atau menambahkan catatan internal.
+7. Setelah selesai, agent set status `resolved`. Customer bisa memberi CSAT.
+8. Tiket `resolved` ditutup otomatis setelah 7 hari. Customer masih bisa reopen dalam batas
+   7 hari sejak `resolved_at`/`closed_at`.
 
-1. Customer membuka widget atau mobile app, mengisi pre-chat (nama, email, kategori).
-2. Sistem membuat sesi chat + tiket, menerapkan kategori, prioritas, dan SLA.
-3. Jika AI auto-reply aktif, sistem mengirim jawaban awal dari knowledge base. AI **tidak** menutup tiket.
-4. Tiket masuk antrean; agent online menerima notifikasi realtime, lalu mengambil tiket.
-5. Agent memverifikasi, berdiskusi dengan customer (widget/web/mobile berada di thread yang sama).
-6. Agent memberi solusi, lalu menandai **Resolved**.
-7. Customer mengonfirmasi dan mengisi CSAT.
-8. Tiket ditutup otomatis 7 hari setelah Resolved, atau dapat ditutup manual oleh agent.
+## Status
 
-### 3.2 Cabang penting
+| Status | Arti |
+|---|---|
+| `new` | Masuk antrean, belum ada assignee |
+| `assigned` | Sudah ada assignee |
+| `in_progress` | Sedang dikerjakan |
+| `pending` | Menunggu customer atau pihak lain |
+| `resolved` | Solusi sudah diberikan |
+| `closed` | Selesai dan ditutup |
 
-- **Prioritas/assignment**: agent dapat mengubah prioritas dan mengambil tiket; supervisor memantau lewat laporan.
-- **Pending**: menunggu informasi customer; timer SLA tetap berjalan.
-- **Reopen**: customer dapat membuka kembali tiket resolved/closed ≤ 7 hari setelah resolved/closed.
-- **SLA breach**: timer melewati target first response/resolusi → notifikasi ke agent/supervisor dan badge merah.
-- **AI fallback**: API key tidak tersedia → jawaban rule-based dari artikel KB; semua jawaban AI dicatat.
-- **Eskalasi L2** digambarkan di BPMN sebagai proses target; MVP memakai assign, prioritas, dan notifikasi SLA.
+Transisi:
 
-### 3.3 SLA default (dapat diubah Admin)
+| Dari | Boleh ke |
+|---|---|
+| `new` | `assigned`, `in_progress` |
+| `assigned` | `in_progress`, `pending`, `resolved` |
+| `in_progress` | `pending`, `resolved` |
+| `pending` | `in_progress`, `resolved`, `closed` |
+| `resolved` | `closed`, `in_progress` |
+| `closed` | `in_progress` |
 
-| Prioritas | First response | Resolusi |
-|---|---|---|
-| Urgent | 5 menit | 4 jam |
-| High | 15 menit | 8 jam |
-| Medium | 30 menit | 1×24 jam |
-| Low | 2 jam | 3×24 jam |
+Reopen dari `resolved`/`closed` mengosongkan `resolved_at` dan `closed_at`, lalu menambah
+`reopen_count`. Resolve mengisi `resolved_at`; close mengisi `closed_at`. Perubahan penting
+dicatat di `ticket_events`.
 
-## 4. Fitur per kanal
+## SLA dan CSAT
 
-**Widget**: bubble & panel, pre-chat + sesi guest, chat realtime, status koneksi, offline queue + retry, CSAT, persistensi lintas tab.
+SLA mengikuti kategori, bukan prioritas:
 
-**Web App**: login & guard, inbox + filter + pencarian, detail tiket + chat, aksi tiket (assign/status/prioritas/reopen), attachment, canned response, AI reply, internal note (tidak terlihat customer), SLA badge & timer, dashboard supervisor, admin panel, notifikasi in-app.
+| Kategori | Prioritas default | First response | Resolution |
+|---|---|---|---|
+| Technical Issue | high | 15 menit | 8 jam |
+| Billing & Payment | medium | 30 menit | 24 jam |
+| Feature Request | low | 2 jam | 72 jam |
 
-**Mobile App**: login customer/agent/supervisor/admin, daftar & detail tiket, chat realtime, offline queue + replay, local notification, CSAT, pengaturan server, APK release. Lampiran ditampilkan sebagai nama file; upload penuh ada di web.
+Nilai ini bisa diubah admin lewat halaman kategori. SLA dihitung 24/7 dan tidak dijeda saat
+status `pending`. Setiap 30 detik server memeriksa tiket terbuka yang melewati deadline.
+Kalau belum pernah ditandai breach, server mengisi kolom breach, mencatat event, membuat
+notifikasi untuk agent/supervisor, dan mengirim event `sla:breach`.
 
-**Lintas kanal**: tiket yang sama dapat dilanjutkan dari widget → mobile → web tanpa kehilangan riwayat.
+First response dihitung saat staff mengirim pesan publik pertama. Balasan AI tidak dihitung.
+CSAT 1–5 bisa diisi customer setelah tiket `resolved` atau `closed`; komentar opsional.
 
-## 5. Arsitektur realtime
+## Realtime
 
-```
-Customer (widget JS) ─┐
-Customer (Flutter)  ──┼── Socket.IO ── Node.js/Express ── SQLite (WAL)
-Agent (web)         ──┤      │                 │
-Agent (Flutter)     ──┘      │                 └── REST API (auth, CRUD, upload)
-                             └── rooms: ticket:{id}, ticket:{id}:staff, user:{id}, role:{role}, staff
-```
+Room yang dipakai:
 
-Prinsip yang menjamin **selalu terkoneksi**:
+- `ticket:{id}`: semua peserta tiket.
+- `ticket:{id}:staff`: staff saja, dipakai untuk catatan internal.
+- `user:{id}`: notifikasi user.
+- `role:{role}` dan `staff`: event untuk staff.
 
-1. **Satu koneksi per klien** dengan heartbeat; reconnect otomatis dengan delay 800 ms sampai maksimum 5 detik.
-2. **Room per tiket** — pesan disiarkan ke semua kanal yang terlibat; catatan internal memakai room staff.
-3. **Idempotensi** — setiap pesan membawa `client_message_id` unik; retry pada tiket yang sama mengembalikan pesan lama.
-4. **Sequence per tiket** — klien menyimpan `last_seq`, saat join/reconnect meminta `ticket:join` untuk replay pesan terlewat.
-5. **Outbox lokal** — pesan saat offline disimpan di `localStorage` (widget) atau `shared_preferences` (mobile), lalu dikirim ulang.
-6. **Delivery & read receipt** — status pesan terkirim/dibaca tersimpan di `message_receipts`.
-7. **Fallback transport** — polling REST otomatis bila Socket.IO tidak tersedia.
-8. **Presence & typing** — jumlah koneksi per user dihitung agar multi-tab tidak salah dianggap offline; indikator typing membantu koordinasi agent.
+Saat membuka tiket, klien mengirim `ticket:join` dengan `last_seq`. Server mengecek akses,
+memasukkan socket ke room, lalu mengembalikan tiket dan pesan setelah sequence tersebut.
+Kalau socket putus, REST tetap dipakai. Widget dan mobile menyimpan pesan yang gagal ke antrean
+lokal dan mengirim ulang dengan `client_message_id` yang sama.
 
-### Event Socket.IO
+Event utama:
 
-| Event | Arah | Payload inti |
+| Event | Arah | Isi |
 |---|---|---|
 | `ticket:join` | client → server | `{ticket_id, last_seq}` → ack `{ok, ticket, messages}` |
 | `ticket:leave` | client → server | `{ticket_id}` |
-| `message:send` | client → server | `{ticket_id, body, client_message_id, is_internal, attachment_ids?}` → ack `{ok, duplicate, message_id, seq}` |
+| `message:send` | client → server | `{ticket_id, body, client_message_id, is_internal}` |
 | `message:new` | server → client | objek pesan |
-| `message:read` | kedua arah | `{ticket_id, message_id, user_id}` |
-| `typing` | kedua arah | `{ticket_id, user_id, name, is_typing}` |
-| `presence:list` | client → server | ack `{ok, users}` (staff) |
+| `message:read` | dua arah | `{ticket_id, message_id, user_id}` |
+| `typing` | dua arah | `{ticket_id, user_id, name, is_typing}` |
+| `presence:list` | client → server | ack `{ok, users}` untuk staff |
 | `presence:update` | server → client | `{user_id, name, role, status}` |
-| `ticket:update` / `ticket:created` | server → client | objek tiket |
-| `notification:new` | server → client | objek notifikasi |
-| `sla:breach` | server → client | `{ticket, kind}` |
+| `ticket:update`, `ticket:created` | server → client | objek tiket |
+| `notification:new`, `sla:breach` | server → client | notifikasi/event SLA |
 
-## 6. Rencana database (SQLite, kompatibel PostgreSQL)
+Presence menghitung jumlah koneksi per user. Satu tab ditutup tidak langsung membuat agent
+offline kalau tab lain masih terbuka.
 
-| Tabel | Kolom kunci | Catatan |
-|---|---|---|
-| `users` | id, name, email (unik), password_hash, role, is_guest, is_active | customer, agent, supervisor, admin; guest widget juga disimpan di sini |
-| `categories` | id, name, default_priority, first_response_min, resolution_min, is_active | SLA per kategori |
-| `tickets` | id, code (unik), subject, description, category_id, priority, status, channel, customer_id, assignee_id, sla_first_due_at, sla_resolution_due_at, first_response_at, resolved_at, closed_at, csat_rating, csat_comment, reopen_count | status dan prioritas dibatasi CHECK |
-| `ticket_messages` | id, ticket_id, sender_id, sender_type, body, is_internal, client_message_id (unik), seq | unik (ticket_id, seq); idempotensi dicek per tiket |
-| `message_receipts` | message_id, user_id, delivered_at, read_at | PK gabungan |
-| `ticket_events` | id, ticket_id, actor_id, type, from_value, to_value, created_at | audit trail |
-| `attachments` | id, ticket_id, message_id?, uploader_id, stored_name, original_name, mime, size | validasi mime & ukuran |
-| `canned_responses` | id, title, body, created_by | template agent |
-| `kb_articles` | id, title, body, tags, is_published | sumber jawaban AI |
-| `devices` | id, user_id, platform, push_token | disiapkan untuk push notification |
-| `notifications` | id, user_id, type, title, payload, read_at | in-app |
-| `ai_logs` | id, ticket_id, message_id, prompt, response, model, tokens, latency_ms, fallback_used | transparansi AI |
+## Database
 
-Indeks utama: `tickets(status, updated_at)`, `tickets(assignee_id, status)`, `tickets(customer_id, created_at)`,
-`tickets(sla_first_due_at)`, `tickets(sla_resolution_due_at)`, `ticket_messages(ticket_id, seq)`,
-`ticket_messages(client_message_id)`, `ticket_events(ticket_id, created_at)`, `notifications(user_id, created_at)`.
+SQLite dengan WAL. Nama tabel dan kolom dibuat supaya tidak terlalu jauh dari PostgreSQL.
 
-## 7. Keputusan desain & trade-off
+| Tabel | Isi |
+|---|---|
+| `users` | Customer, agent, supervisor, admin, dan guest widget |
+| `categories` | Nama kategori, prioritas default, target SLA |
+| `tickets` | Data tiket, status, assignee, deadline SLA, CSAT, reopen |
+| `ticket_messages` | Pesan customer/staff/AI, catatan internal, sequence |
+| `message_receipts` | Status delivered/read per user |
+| `ticket_events` | Riwayat perubahan tiket |
+| `attachments` | Metadata file; file fisik di folder upload |
+| `canned_responses` | Template balasan agent |
+| `kb_articles` | Artikel knowledge base untuk AI |
+| `notifications` | Notifikasi in-app |
+| `ai_logs` | Prompt, output, model, latency, dan status fallback |
+| `devices` | Disiapkan untuk push token; belum dipakai karena belum ada FCM |
 
-1. **Socket.IO vs WebSocket murni** — Socket.IO memberi reconnect, room, ack, dan fallback polling siap pakai; penting untuk syarat "selalu terkoneksi".
-2. **SQLite (WAL)** — mudah direview tanpa setup server DB; skema dan query tetap kompatibel PostgreSQL.
-3. **Idempotensi di server** — mencegah duplikat saat retry, bukan hanya di klien.
-4. **Replay berbasis sequence** — lebih murah dan deterministik dibanding menyimpan seluruh histori di klien.
-5. **AI opsional & tidak memutus manusia** — AI dipakai untuk first response otomatis dan balasan manual; semua tiket tetap dapat ditangani agent.
-6. **Push notification lokal dulu** — tidak memerlukan Firebase project; local notification dipicu event Socket.IO saat aplikasi aktif.
-7. **Guest chat** — menurunkan friksi customer; keamanan dijaga lewat token sesi berumur terbatas.
+Guest disimpan di `users` dengan `is_guest = 1` dan `password_hash = NULL`. Ini menghindari
+tabel customer terpisah yang isinya hampir sama.
 
-## 8. Asumsi
+`ticket_messages` punya `seq` per tiket dan kombinasi `(ticket_id, seq)` unik. Idempotensi
+memakai `(ticket_id, client_message_id)`. Kolom `client_message_id` sendiri unik global; kalau
+ID yang sama dipakai di tiket lain, server mengembalikan 409.
 
-- Satu tenant (satu perusahaan); multi-tenant di luar scope.
-- Bahasa UI: Indonesia, dengan label teknis berbahasa Inggris.
-- Zona waktu Asia/Jakarta; SLA dihitung 24/7 (bukan jam kerja) agar sederhana dan dapat diuji.
-- Lampiran maksimum 5 MB, tipe gambar/PDF/dokumen kantor.
-- AI memakai endpoint OpenAI-compatible melalui environment variable; tanpa key memakai fallback rule-based.
+## Keputusan yang diambil
 
-## 9. Traceability
+- **Socket.IO** dipilih karena sudah punya room, ack, reconnect, dan fallback polling.
+- **SQLite** dipilih supaya demo tidak perlu setup database server. Ini bukan pilihan untuk
+  banyak instance.
+- **Vanilla JS** untuk web/widget supaya tidak ada build step dan widget tetap ringan.
+- **Flutter** supaya Android dan Windows memakai kode yang sama.
+- **JWT + bcrypt** supaya REST dan handshake socket memakai token yang sama.
+- **AI opsional**. Tanpa API key, sistem tetap menjawab dari knowledge base.
 
-| Dokumen | Isi | Rujukan |
-|---|---|---|
-| `BPMN-Helpdesk.pdf` | 5 lane, 30+ elemen, timer SLA, eskalasi, CSAT | Soal 1a |
-| `WBS-Helpdesk.xlsx` | 7 modul, 64 fitur, 104,5 jam-orang, risiko, timeline | Soal 1b |
-| Kolom **Ref BPMN** pada WBS | Menghubungkan fitur ke elemen BPMN (C0-C5, S1-S8, A1-A7, P1-P3, D1-D4) | Traceability |
-
-## 10. Cara regenerasi dokumen
-
-```bash
-python docs/tools/gen_bpmn.py      # SVG + draw.io
-python docs/tools/export_pdf.py    # BPMN PDF A3 landscape
-python docs/tools/gen_wbs.py       # WBS XLSX
-```
-
-Generator ditulis dengan Python (PyMuPDF, openpyxl) agar isi dokumen dapat direview dan diubah
-sebagai kode, bukan file biner manual.
+Detail trade-off dan batasan ada di [`PANDUAN-PROYEK.md`](PANDUAN-PROYEK.md).

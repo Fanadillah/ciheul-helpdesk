@@ -3,8 +3,8 @@
 const { createNotification } = require('../services/notifications');
 
 /**
- * Broadcast a ticket snapshot to everyone currently viewing it, plus staff
- * members who are not in the ticket room (inbox, reports, dashboard).
+ * Kirim snapshot tiket ke room tiket dan staff lain.
+ * Staff yang sudah ada di room tidak menerima event kedua.
  */
 function emitTicket(io, ticket) {
   io.to(`ticket:${ticket.id}`).emit('ticket:update', ticket);
@@ -12,8 +12,7 @@ function emitTicket(io, ticket) {
 }
 
 /**
- * Persist an in-app notification and deliver it to the user's room.
- * Returning the row keeps callers free of notification formatting details.
+ * Simpan notifikasi lalu kirim ke room user.
  */
 function notifyUser(io, db, userId, type, title, payload) {
   if (!userId) return null;

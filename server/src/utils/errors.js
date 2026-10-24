@@ -31,7 +31,7 @@ function errorMiddleware(err, req, res, _next) {
   }
 
   if (status >= 500) {
-    // keep the stack in the server log, never leak it to clients
+    // Stack hanya untuk log server, jangan dikirim ke client.
     console.error('[error]', err);
   }
   res.status(status).json({

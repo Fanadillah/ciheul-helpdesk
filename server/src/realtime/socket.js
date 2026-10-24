@@ -6,8 +6,8 @@ const messages = require('../services/messages');
 const tickets = require('../services/tickets');
 const { emitTicket, notifyUser } = require('../realtime/events');
 
-// A user may have several tabs/devices open. Count connections so a single
-// closed tab does not mark the agent offline.
+// Satu user bisa punya beberapa tab/perangkat. Simpan jumlah koneksi supaya
+// menutup satu tab tidak langsung membuat agent offline.
 const presence = new Map();
 
 function presenceEntry(user) {

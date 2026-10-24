@@ -32,7 +32,7 @@ wb = Workbook()
 # ------------------------------------------------------------------ data ----
 # code, name, desc, ref, prio, hours, dep, acceptance, day
 ROWS = [
-    ("1", 1, "Aplikasi Helpdesk (end-to-end)",
+    ("1", 1, "Aplikasi Helpdesk (widget, web, mobile)",
      "Live Chat Widget + Web App (agent) + Mobile App realtime, seluruh fitur wajib "
      "dan fitur opsional pada instruksi take home test.",
      "Pool", "Must", 92.5, "—",
@@ -43,7 +43,7 @@ ROWS = [
      "Pemodelan proses bisnis, arsitektur, skema data, dan kontrak integrasi.",
      "BPMN", "Must", 10, "—",
      "Dokumen analisis disetujui dan menjadi acuan implementasi.", "Hari 1", "In Progress"),
-    ("1.1.1", 3, "BPMN swimlane end-to-end",
+    ("1.1.1", 3, "BPMN swimlane alur tiket",
      "5 lane (Customer, Live Chat System, CS Agent, Supervisor, Admin); alur tiket, "
      "eskalasi L2, timer SLA, CSAT, auto-close.",
      "Semua", "Must", 3, "1.1", "PDF A3 berisi seluruh alur utama + cabang eskalasi.",
@@ -53,8 +53,8 @@ ROWS = [
      "Semua", "Must", 2, "1.1", "WBS dapat ditelusuri ke elemen BPMN (kolom Ref BPMN).",
      "Hari 1", "Done"),
     ("1.1.3", 3, "ERD & database schema",
-     "13+ tabel: users, customers, tickets, ticket_messages, ticket_events, attachments, "
-     "categories, canned_responses, kb_articles, devices, notifications, ai_logs.",
+     "12 tabel: users, categories, tickets, ticket_messages, message_receipts, "
+     "ticket_events, attachments, canned_responses, kb_articles, devices, notifications, ai_logs.",
      "S1, S4, S6", "Must", 2, "1.1", "ERD final + file migrasi SQL berjalan tanpa error.",
      "Hari 1", "Planned"),
     ("1.1.4", 3, "Kontrak REST API & event Socket.IO",
@@ -274,7 +274,7 @@ ROWS = [
      "C4", "Must", 1, "1.5.3", "Rating tersimpan dan tampil di web.",
      "Hari 3", "Planned"),
     ("1.5.9", 3, "Build & signing APK",
-     "Keystore release, build APK, uji install di perangkat/emulator.",
+     "Build APK release dengan debug signing untuk demo, lalu uji install di emulator/perangkat.",
      "—", "Must", 0.5, "1.5.4", "APK release terpasang tanpa crash saat login & chat.",
      "Hari 3", "Planned"),
     ("1.5.10", 3, "Deep link dari notifikasi",
@@ -283,10 +283,10 @@ ROWS = [
      "Hari 3", "Planned"),
 
     ("1.6", 2, "QA, DevOps & Dokumentasi",
-     "Pengujian end-to-end, perbaikan, dokumentasi, dan paket deliverable.",
+     "Pengujian alur utama, perbaikan, dokumentasi, dan paket deliverable.",
      "Semua", "Must", 8, "1.2-1.5", "Semua skenario wajib lulus dan didokumentasikan.",
      "Hari 3-4", "Planned"),
-    ("1.6.1", 3, "E2E widget ↔ web ↔ mobile",
+    ("1.6.1", 3, "Uji alur widget ↔ web ↔ mobile",
      "Skenario: customer chat dari widget, agent balas di web, customer lanjut di mobile.",
      "S6", "Must", 2, "1.4, 1.5", "Satu thread percakapan konsisten di tiga kanal.",
      "Hari 4", "Planned"),
@@ -611,10 +611,10 @@ TIMELINE = [
      "Web app lengkap, APK release", 14,
      "Tiga kanal (widget, web, mobile) saling terhubung; APK terpasang."),
     ("Hari 4 — Minggu, 25 Okt 2026", "QA, dokumentasi & submission",
-     "E2E lintas kanal, uji putus-sambung, bug fixing, README & screenshot, "
+     "Uji alur lintas kanal, uji putus-sambung, bug fixing, README & screenshot, "
      "export PDF/XLSX, publish repo publik, kirim email.",
      "Repo publik + PDF + XLSX + APK", 8,
-     "Email terkirim sebelum 23:59 WIB (target 12.00 WIB)."),
+     "Email terkirim sebelum 23:59 WIB (target 09.00 WIB)."),
 ]
 for r, row in enumerate(TIMELINE, start=4):
     for ci, v in enumerate(row, start=1):

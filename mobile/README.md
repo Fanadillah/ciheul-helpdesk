@@ -1,8 +1,8 @@
 # Ciheul Helpdesk — Mobile
 
-Aplikasi Flutter untuk customer dan agent: daftar tiket, chat realtime, antrean offline, dan
-notifikasi lokal. Lihat [README utama](../README.md) untuk arsitektur, akun demo, dan cara
-menjalankan backend.
+Aplikasi Flutter untuk customer dan staff. Isinya daftar tiket, chat realtime, antrean offline,
+dan notifikasi lokal. Lihat [README utama](../README.md) untuk akun demo dan cara menjalankan
+backend.
 
 ## Menjalankan
 
@@ -23,7 +23,9 @@ flutter build apk --release --dart-define=API_BASE=http://10.0.2.2:3000
 ```
 
 Hasil build disalin ke [`../artifacts/helpdesk.apk`](../artifacts/helpdesk.apk). APK memakai debug
-signing key agar dapat langsung dipasang untuk demo.
+signing key supaya bisa langsung dipasang untuk demo.
+
+Notifikasi lokal hanya muncul saat proses aplikasi masih aktif. Belum ada FCM.
 
 ## Struktur
 
@@ -42,4 +44,4 @@ flutter analyze
 flutter test
 ```
 
-Widget test mencakup parsing model tiket, formatter, dan render status chip.
+Test Flutter mencakup parsing model tiket, formatter, dan render status chip.

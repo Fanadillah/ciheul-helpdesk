@@ -1,6 +1,6 @@
 'use strict';
 
-/** Minimal in-memory sliding-window rate limiter (no external dependency). */
+/** Rate limiter in-memory dengan sliding window. */
 function rateLimit({ windowMs = 60000, max = 30, keyFn } = {}) {
   const hits = new Map();
   const key = keyFn || ((req) => req.ip);

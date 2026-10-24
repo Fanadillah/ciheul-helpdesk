@@ -236,7 +236,7 @@ function getEvents(db, id) {
     WHERE e.ticket_id = ? ORDER BY e.created_at ASC`).all(id);
 }
 
-/** Mark SLA deadlines that have just been exceeded; returns the affected tickets. */
+/** Tandai SLA yang baru lewat; return tiket yang terkena. */
 function sweepSla(db) {
   const ts = now();
   const breaches = [];
@@ -260,7 +260,7 @@ function sweepSla(db) {
   return breaches;
 }
 
-/** Close tickets that have been sitting in Resolved longer than the policy window. */
+/** Tutup tiket resolved yang sudah lewat batas auto-close. */
 function autoCloseResolved(db, days = 7) {
   const windowDays = Number(days);
   if (!Number.isFinite(windowDays) || windowDays <= 0) return [];

@@ -54,7 +54,7 @@ function registerRoutes(app, db, io) {
     res.status(404).json({ error: { message: `Endpoint ${req.method} ${req.originalUrl} tidak ditemukan` } });
   });
 
-  // static assets: widget + web app (single origin, no CORS for the demo)
+  // File statis web dan widget.
   app.use('/widget', express.static(config.widgetDir));
   app.use(express.static(config.webDir));
   app.get('*', (req, res, next) => {

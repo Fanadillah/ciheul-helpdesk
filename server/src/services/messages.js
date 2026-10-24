@@ -22,8 +22,8 @@ function hydrate(db, message) {
 }
 
 /**
- * Persist a chat message, making retries idempotent through client_message_id.
- * Returns { message, duplicate }.
+ * Simpan pesan. Retry dengan client_message_id mengembalikan pesan lama.
+ * Return: { message, duplicate }.
  */
 function appendMessage(db, input) {
   const { ticketId, sender, body, isInternal = false, clientMessageId = null } = input;
@@ -39,8 +39,8 @@ function appendMessage(db, input) {
       WHERE ticket_id = ? AND client_message_id = ?`).get(ticketId, clientMessageId);
     if (existing) return { message: hydrate(db, existing), duplicate: true };
 
-    // client_message_id is globally unique in the schema; report a clear
-    // conflict instead of leaking a message from another ticket.
+    // client_message_id unik global. Kalau bentrok dengan tiket lain,
+    // kembalikan konflik; jangan kirim pesan tiket lain.
     const clash = db.prepare('SELECT 1 FROM ticket_messages WHERE client_message_id = ?').get(clientMessageId);
     if (clash) throw conflict('client_message_id sudah digunakan pada tiket lain');
   }

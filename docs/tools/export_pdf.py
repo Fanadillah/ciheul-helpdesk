@@ -46,6 +46,6 @@ doc = fitz.open(PDF)
 page = doc[0]
 print("pages:", doc.page_count, "size(pt):", page.rect)
 pm = page.get_pixmap(matrix=fitz.Matrix(2, 2))
-out = ROOT / "assets" / "bpmn-preview.png"
+out = ROOT / "assets" / "bpmn-helpdesk.png"
 pm.save(out)
 print("wrote", out)

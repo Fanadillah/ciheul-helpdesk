@@ -130,7 +130,7 @@ class AppState extends ChangeNotifier {
     } on ApiException catch (err) {
       if (err.isUnauthorized) await logout(notice: 'Sesi berakhir. Silakan login kembali.');
     } catch (_) {
-      // keep the last good snapshot when a response cannot be parsed
+      // Pertahankan data terakhir kalau response tidak bisa diparse.
     } finally {
       refreshing = false;
       notifyListeners();
@@ -146,7 +146,7 @@ class AppState extends ChangeNotifier {
       categories = list.map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map))).toList();
       notifyListeners();
     } catch (_) {
-      // categories are not critical for rendering the inbox
+      // Kategori tidak wajib untuk render inbox.
     }
   }
 
@@ -180,7 +180,7 @@ class AppState extends ChangeNotifier {
           .toList();
       notifyListeners();
     } catch (_) {
-      // optional data
+      // Data opsional; halaman tetap bisa dipakai tanpa ini.
     }
   }
 
@@ -284,7 +284,7 @@ class AppState extends ChangeNotifier {
           if (err.isNetwork || err.status >= 500 || err.status == 429) {
             remaining.add(item);
           }
-          // Messages rejected by validation are dropped so the queue can drain.
+          // Pesan yang ditolak validasi dibuang supaya antrean tidak macet.
         } catch (_) {
           remaining.add(item);
         }

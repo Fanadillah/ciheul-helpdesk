@@ -165,7 +165,7 @@ export function renderInbox(container, ctx, options = {}) {
       const data = await api('/api/tickets?limit=100');
       const incoming = data.tickets || [];
       const incomingById = new Map(incoming.map((t) => [t.id, t]));
-      // Preserve transient client-side fields that are not part of the REST payload.
+      // Pertahankan field lokal yang tidak ada di response REST.
       state.tickets = state.tickets
         .filter((t) => incomingById.has(t.id))
         .map((t) => ({ ...t, ...incomingById.get(t.id) }));
@@ -997,7 +997,7 @@ export function renderInbox(container, ctx, options = {}) {
 
   unsubs.push(sock.on('message:read', (payload) => {
     if (!state.current || payload.ticket_id !== state.current.id) return;
-    // receipts are informational; no UI change required beyond the double check
+    // Status baca hanya dipakai untuk data; tampilan tidak perlu diubah.
   }));
 
   refs.search.addEventListener('input', () => {

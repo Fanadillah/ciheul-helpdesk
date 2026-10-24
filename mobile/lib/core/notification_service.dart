@@ -29,7 +29,7 @@ class NotificationService {
       }
       _ready = true;
     } catch (_) {
-      // Notifications are a bonus: stay silent when the platform is unsupported.
+      // Local notification opsional. Lewati kalau platform tidak mendukung.
       _ready = false;
     }
   }
@@ -55,7 +55,7 @@ class NotificationService {
         payload: ticketId,
       );
     } catch (_) {
-      // ignore notification failures
+      // Abaikan error notifikasi.
     }
   }
 }

@@ -1,44 +1,45 @@
 # Ciheul Helpdesk
 
-Aplikasi helpdesk end-to-end untuk Technical Test Software Engineer **Ciheul Technologies**.
-Satu tiket, satu percakapan — dapat dilanjutkan dari **live chat widget**, **web app agent**, dan
-**mobile app** tanpa kehilangan riwayat.
+Repo ini berisi demo helpdesk untuk take-home test Software Engineer di Ciheul Technologies.
+Isinya: live chat widget, dashboard web, backend Node.js, dan aplikasi Flutter. Semua kanal
+memakai backend dan database yang sama.
 
-| Deliverable | Lokasi |
+| Isi | Lokasi |
 |---|---|
-| BPMN proses bisnis | [`docs/BPMN-Helpdesk.pdf`](docs/BPMN-Helpdesk.pdf) |
-| WBS & estimasi | [`docs/WBS-Helpdesk.xlsx`](docs/WBS-Helpdesk.xlsx) |
-| Analisis & desain | [`docs/ANALISIS.md`](docs/ANALISIS.md) |
-| Panduan proyek & interview | [`docs/PANDUAN-PROYEK.md`](docs/PANDUAN-PROYEK.md) |
-| Aplikasi web + widget | folder [`web/`](web) & [`widget/`](widget) |
-| Backend REST + Socket.IO | folder [`server/`](server) |
-| Mobile app (Flutter) | folder [`mobile/`](mobile) |
-| APK release | [`artifacts/helpdesk.apk`](artifacts/helpdesk.apk) |
+| BPMN | [`docs/BPMN-Helpdesk.pdf`](docs/BPMN-Helpdesk.pdf) |
+| WBS | [`docs/WBS-Helpdesk.xlsx`](docs/WBS-Helpdesk.xlsx) |
+| Catatan analisis | [`docs/ANALISIS.md`](docs/ANALISIS.md) |
+| Catatan proyek | [`docs/PANDUAN-PROYEK.md`](docs/PANDUAN-PROYEK.md) |
+| Hasil pengujian | [`docs/QA.md`](docs/QA.md) |
+| Widget | [`widget/`](widget) |
+| Web app | [`web/`](web) |
+| Backend | [`server/`](server) |
+| Mobile | [`mobile/`](mobile) |
+| APK | [`artifacts/helpdesk.apk`](artifacts/helpdesk.apk) |
 
-> Repository: <https://github.com/Fanadillah/ciheul-helpdesk>
+Repository: <https://github.com/Fanadillah/ciheul-helpdesk>
 
----
+## Menjalankan
 
-## 1. Demo cepat
-
-Prasyarat: **Node.js ≥ 20** (dites di Node 22). Tidak perlu build step untuk web/widget.
+Butuh Node.js 20 atau lebih baru. Web dan widget tidak punya build step.
 
 ```bash
 cd server
-npm install
-npm run seed          # data demo (opsional; server auto-seed saat DB kosong)
+npm ci
+npm run seed
 npm start
 ```
 
-Buka:
+Kalau database masih kosong, server akan menjalankan seed otomatis. `npm run seed` berguna
+kalau ingin mengembalikan data demo ke kondisi awal.
 
 | Halaman | URL |
 |---|---|
-| Web app (agent / supervisor / admin / customer) | <http://localhost:3000/> |
-| Demo widget | <http://localhost:3000/widget/demo.html> |
+| Web app | <http://localhost:3000/> |
+| Widget demo | <http://localhost:3000/widget/demo.html> |
 | Health check | <http://localhost:3000/health> |
 
-### Akun demo
+Akun demo:
 
 | Role | Email | Password |
 |---|---|---|
@@ -48,165 +49,147 @@ Buka:
 | Agent 2 | `agent2@helpdesk.test` | `Agent123!` |
 | Customer | `customer@helpdesk.test` | `Cust123!` |
 
-Widget memakai pre-chat (nama + email) dan membuat sesi **guest** otomatis; tidak perlu password.
-Gunakan email baru setiap kali ingin membuat sesi guest baru.
+Widget memakai nama dan email, lalu membuat akun guest. Tidak ada password untuk guest.
+Pakai email baru kalau ingin mulai sesi guest baru.
 
-### Skenario demo lintas kanal
+## Alur demo
 
-1. Buka `widget/demo.html`, isi nama + email, kirim pesan. Tiket baru muncul **realtime** di inbox web
-   (login `agent@helpdesk.test`).
-2. Balas dari web. Balasan muncul di widget tanpa refresh.
-3. Login ke mobile app dengan akun customer yang sama (atau agent), buka tiket, lanjutkan percakapan.
-4. Ubah status tiket menjadi **Resolved** dari web; customer dapat memberi **CSAT** di widget/mobile.
-5. Matikan server sebentar → widget/mobile menunjukkan status offline, pesan masuk antrean lokal, lalu
-   terkirim otomatis saat koneksi kembali (idempotent, tidak dobel).
+1. Buka widget demo, isi nama dan email, kirim pesan.
+2. Login web sebagai agent. Tiket baru harus muncul di inbox.
+3. Balas dari web. Balasan masuk ke widget tanpa refresh.
+4. Buka tiket yang sama dari mobile, lalu lanjutkan chat dari sana.
+5. Ubah status ke Resolved. Customer bisa memberi rating CSAT.
+6. Matikan server sebentar, kirim pesan dari widget atau mobile, lalu nyalakan lagi.
+   Pesan masuk antrean dan dikirim ulang saat koneksi kembali.
 
----
+## Struktur
 
-## 2. Arsitektur
-
-```
-┌──────────────────────┐      ┌──────────────────────┐      ┌──────────────────────┐
-│  Widget (vanilla JS) │      │  Web app (vanilla JS)│      │  Mobile (Flutter)    │
-│  Shadow DOM, guest   │      │  agent/supervisor/   │      │  customer & agent    │
-│  session, queue      │      │  admin/customer      │      │  local notification  │
-└──────────┬───────────┘      └──────────┬───────────┘      └──────────┬───────────┘
-           │ REST + Socket.IO            │ REST + Socket.IO            │ REST + Socket.IO
-           └─────────────────────────────┼─────────────────────────────┘
-                                         ▼
-                         ┌────────────────────────────────┐
-                         │ Node.js + Express + Socket.IO  │
-                         │ JWT auth · RBAC · rate limit   │
-                         │ AI reply (optional) + KB       │
-                         └───────────────┬────────────────┘
-                                         ▼
-                         ┌────────────────────────────────┐
-                         │ SQLite (WAL) + file uploads    │
-                         │ tickets, messages, SLA, audit  │
-                         └────────────────────────────────┘
-```
-
-**Satu origin** untuk web + widget, sehingga tidak ada masalah CORS pada demo. Mobile memakai
-REST untuk aksi dan Socket.IO untuk menerima event; jika socket terputus, REST + polling/refresh
-tetap bekerja.
-
-### Struktur repository
-
-```
+```text
 .
-├── artifacts/            # APK release (helpdesk.apk)
-├── docs/                 # BPMN, WBS, analisis, generator
-├── mobile/               # Flutter app (Android + Windows)
-│   └── lib/
-│       ├── core/         # api client, socket, state, model, notifikasi
-│       ├── screens/      # login, inbox, detail, buat tiket, notifikasi, setting
-│       └── widgets/      # komponen UI bersama
+├── artifacts/        APK release
+├── docs/             BPMN, WBS, catatan, screenshot
+├── mobile/           Flutter app (Android/Windows)
 ├── server/
 │   ├── src/
-│   │   ├── db/           # schema.sql, seed, migrasi
-│   │   ├── middleware/   # JWT auth, RBAC
-│   │   ├── realtime/     # Socket.IO contract
-│   │   ├── routes/       # REST endpoints
-│   │   └── services/     # tiket, pesan, SLA, AI, laporan
-│   └── tests/            # Vitest + Supertest + socket.io-client
-├── web/                  # SPA tanpa build step (ES modules)
-└── widget/               # chat-widget.js + demo.html
+│   │   ├── db/       schema, seed, migrate
+│   │   ├── middleware/ auth dan role
+│   │   ├── realtime/ Socket.IO dan helper event
+│   │   ├── routes/   endpoint REST
+│   │   └── services/ tiket, pesan, SLA, AI, laporan
+│   └── tests/
+├── web/              web app tanpa build step
+└── widget/           chat-widget.js dan demo.html
 ```
 
----
+Route menangani HTTP dan validasi awal. Aturan bisnis dan query ada di `services`, supaya
+REST dan Socket.IO memakai jalur yang sama.
 
-## 3. Fitur
+## Yang sudah ada
 
-### Widget (customer)
-- Bubble mengambang + panel chat, **Shadow DOM** agar CSS host tidak bentrok.
-- Pre-chat (nama, email), sesi guest JWT, persistensi `localStorage`.
-- Chat realtime, indikator typing, status koneksi, unread badge.
-- **Offline queue**: pesan disimpan dan dikirim ulang otomatis setelah reconnect.
-- CSAT bintang setelah tiket resolved dan tombol mulai chat baru untuk tiket yang sudah selesai.
-- Fallback polling bila Socket.IO gagal; status kirim pesan (mengirim, antre, gagal) dan retry.
+**Widget**
 
-### Web app
-- Login multi-role dengan guard dan redirect sesuai role.
-- Inbox split-view: filter status/prioritas/assignee, pencarian, badge unread, notifikasi in-app.
-- Detail tiket: chat realtime, **catatan internal** (tidak terlihat customer), lampiran,
-  canned response, **balasan AI**, ubah status/prioritas/assignee.
-- Customer portal: buat tiket, daftar tiket sendiri, CSAT, reopen.
-- Dashboard supervisor: KPI (volume, first response, resolusi, SLA compliance, CSAT),
-  grafik volume/kanal, beban agent, tiket CSAT rendah.
-- Admin: kelola user & role, kategori + kebijakan SLA, knowledge base untuk AI.
-- Fallback polling + tombol resync saat socket terputus.
+- Bubble chat dan panel, memakai Shadow DOM supaya CSS website tidak bentrok.
+- Pre-chat nama/email dan sesi guest.
+- Chat realtime, status koneksi, indikator typing.
+- Antrean pesan saat offline. Pesan dikirim ulang lewat REST atau socket setelah koneksi pulih.
+- Status pesan: mengirim, menunggu koneksi, gagal, terkirim. Pesan gagal bisa diklik untuk retry.
+- CSAT setelah tiket resolved dan tombol mulai chat baru setelah tiket selesai.
+- Polling REST kalau Socket.IO tidak tersedia.
 
-### Mobile (Flutter)
-- Login customer/agent/supervisor/admin, sesi tersimpan di `shared_preferences`.
-- Daftar tiket dengan filter, pencarian, pull-to-refresh, badge unread.
-- Detail chat realtime, optimistic UI, status kirim (mengirim/antre/gagal), antrean offline otomatis.
-- Buat tiket baru, CSAT, reopen, ubah status/assignee (staff), balasan AI.
-- **Local notification** (`flutter_local_notifications`) untuk pesan/notifikasi baru.
-- Pengaturan alamat server (emulator vs perangkat fisik) dan status koneksi.
+Widget belum punya upload lampiran. Lampiran hanya ada di web.
 
-### Backend
-- REST + Socket.IO, JWT (12 jam), password **bcrypt**, RBAC di REST & event socket.
-- Siklus tiket dengan validasi transisi status, SLA first response/resolution, audit events.
-- **Idempotensi pesan** lewat `client_message_id` (REST & socket), dibatasi per tiket → retry tidak menggandakan pesan.
-- AI auto-reply saat tiket dibuat (opsional) + fallback knowledge base tanpa API key.
-- Rate limit login/guest session, validasi input, batas ukuran & tipe lampiran.
-- Auto-close tiket resolved setelah 7 hari (dapat diatur lewat `AUTO_CLOSE_DAYS`).
-- Seed data demo; server tidak menghapus data saat restart.
+**Web**
 
----
+- Login customer, agent, supervisor, dan admin.
+- Inbox dengan filter status, prioritas, assignee, dan pencarian.
+- Detail tiket: chat, catatan internal, lampiran, canned response, balasan AI,
+  ubah status/prioritas/assignee.
+- Halaman customer untuk membuat tiket, melihat tiket sendiri, CSAT, dan reopen.
+- Laporan untuk supervisor/admin: volume, first response, SLA, CSAT, beban agent.
+- Admin: user, kategori + SLA, knowledge base.
+- Notifikasi in-app, fallback polling, dan tombol resync.
 
-## 4. Selalu terhubung (reliability)
+**Mobile**
 
-| Skenario | Perilaku |
-|---|---|
-| Socket tersambung | Pesan & update tiket dikirim seketika melalui room `ticket:{id}` |
-| Socket putus | Widget/mobile/web memakai REST; UI menampilkan status offline |
-| Pesan gagal terkirim | Disimpan di antrean lokal (`localStorage` / `shared_preferences`) |
-| Reconnect | Antrean dikirim ulang dengan `client_message_id` yang sama; server mengembalikan pesan lama (`duplicate: true`) |
-| Event terlewat | `ticket:join {last_seq}` mengembalikan pesan setelah seq terakhir; refresh/polling sebagai jaring kedua |
-| Multi-kanal | Widget, web, dan mobile join room tiket yang sama — semua menerima pesan tanpa duplikasi |
+- Login semua role. Sesi dan antrean disimpan di `shared_preferences`.
+- Daftar tiket, pencarian, filter, pull-to-refresh.
+- Chat realtime dan optimistic UI.
+- Antrean offline lewat REST.
+- Buat tiket, CSAT, reopen, ubah status/assignee untuk staff, balasan AI.
+- Local notification dari event Socket.IO.
+- Pengaturan alamat server.
 
----
+Lampiran di mobile hanya ditampilkan sebagai nama file. Upload ada di web.
 
-## 5. API singkat
+**Backend**
 
-Semua endpoint privat memakai header `Authorization: Bearer <token>`.
+- REST + Socket.IO.
+- JWT 12 jam, password bcrypt.
+- Role dicek di route dan event socket.
+- Validasi transisi status tiket.
+- SLA first response dan resolution per kategori.
+- Audit trail di `ticket_events`.
+- Idempotensi pesan lewat `client_message_id`.
+- AI auto-reply opsional, fallback ke knowledge base.
+- Rate limit untuk login dan pembuatan guest.
+- Batas ukuran/tipe file untuk lampiran.
+- Auto-close tiket resolved setelah 7 hari.
+- Seed data demo.
 
-| Method | Endpoint | Keterangan |
+## Koneksi dan pesan
+
+REST dipakai untuk aksi: login, buat tiket, kirim pesan, upload, ubah status, CSAT, laporan,
+dan admin. Socket.IO dipakai untuk menerima perubahan: pesan baru, update tiket, notifikasi,
+typing, presence, dan SLA breach.
+
+Kalau socket putus, widget dan mobile tetap bisa mengirim lewat REST. Pesan yang gagal karena
+jaringan disimpan di antrean lokal. Saat reconnect, pesan dikirim lagi dengan
+`client_message_id` yang sama. Server mencari kombinasi tiket + ID tersebut, jadi retry tidak
+membuat pesan kedua.
+
+Socket room:
+
+- `ticket:{id}` untuk semua peserta tiket.
+- `ticket:{id}:staff` untuk catatan internal.
+- `user:{id}` untuk notifikasi user.
+- `staff` untuk event yang perlu dilihat semua staff.
+
+`ticket:join` dengan `last_seq` mengembalikan pesan setelah sequence terakhir. Ini dipakai
+untuk mengejar pesan yang terlewat saat reconnect.
+
+## API singkat
+
+Semua endpoint privat memakai `Authorization: Bearer <token>`.
+
+| Method | Endpoint | Catatan |
 |---|---|---|
-| `POST` | `/api/auth/login` | Login staff/customer |
-| `GET` | `/api/auth/me` | Profil token aktif |
-| `GET` | `/api/public/categories` | Kategori untuk widget |
+| `POST` | `/api/auth/login` | Login |
+| `GET` | `/api/auth/me` | User dari token |
+| `GET` | `/api/public/categories` | Kategori untuk widget/customer |
 | `POST` | `/api/public/session` | Sesi guest widget |
-| `GET/POST` | `/api/tickets` | Daftar / buat tiket |
-| `GET/PATCH` | `/api/tickets/:id` | Detail / ubah status, prioritas, assignee |
-| `GET/POST` | `/api/tickets/:id/messages` | Riwayat / kirim pesan (mendukung `client_message_id`, `is_internal`) |
-| `POST` | `/api/tickets/:id/attachments` | Upload lampiran (maks 5 MB) |
+| `GET/POST` | `/api/tickets` | Daftar/buat tiket |
+| `GET/PATCH` | `/api/tickets/:id` | Detail/ubah tiket |
+| `GET/POST` | `/api/tickets/:id/messages` | Riwayat/kirim pesan |
+| `POST` | `/api/tickets/:id/attachments` | Upload lampiran |
 | `POST` | `/api/tickets/:id/csat` | Rating customer |
-| `POST` | `/api/tickets/:id/reopen` | Reopen ≤ 7 hari |
-| `POST` | `/api/tickets/:id/ai-reply` | Generate balasan AI (staff) |
-| `GET` | `/api/reports/summary` | KPI supervisor/admin |
-| `GET/POST/PATCH` | `/api/users`, `/api/categories`, `/api/kb` | Admin (daftar user/kategori juga untuk staff) |
+| `POST` | `/api/tickets/:id/reopen` | Reopen tiket |
+| `POST` | `/api/tickets/:id/ai-reply` | Balasan AI untuk staff |
+| `GET` | `/api/reports/summary` | Laporan |
+| `GET/POST/PATCH` | `/api/users`, `/api/categories`, `/api/kb` | Admin; daftar user/kategori juga untuk staff |
 
-### Socket.IO
+Event socket yang dipakai:
 
-Auth: `io(url, { auth: { token } })`.
-
-| Arah | Event | Payload |
+| Event | Arah | Isi |
 |---|---|---|
-| client → server | `ticket:join` | `{ticket_id, last_seq}` → ack `{ok,ticket,messages}` |
-| client → server | `ticket:leave` | `{ticket_id}` |
-| client → server | `message:send` | `{ticket_id, body, client_message_id, is_internal}` → ack `{ok,duplicate,message_id,seq}` |
-| client → server | `typing` / `message:read` | `{ticket_id, is_typing}` / `{ticket_id, message_id}` |
-| client → server | `presence:list` | ack `{ok,users}` (staff) |
-| server → client | `message:new`, `ticket:update`, `ticket:created` | objek pesan/tiket |
-| server → client | `notification:new`, `sla:breach`, `presence:update` | objek notifikasi/event |
+| `ticket:join` | client → server | `{ticket_id, last_seq}` → ack tiket + pesan baru |
+| `ticket:leave` | client → server | `{ticket_id}` |
+| `message:send` | client → server | pesan + `client_message_id` |
+| `typing`, `message:read` | dua arah | status mengetik dan sudah dibaca |
+| `presence:list` | client → server | daftar staff online |
+| `message:new`, `ticket:update`, `ticket:created` | server → client | objek pesan/tiket |
+| `notification:new`, `sla:breach`, `presence:update` | server → client | notifikasi dan status |
 
----
-
-## 6. Mobile app
-
-### Jalankan langsung
+## Mobile
 
 ```bash
 cd mobile
@@ -214,45 +197,27 @@ flutter pub get
 flutter run --dart-define=API_BASE=http://10.0.2.2:3000
 ```
 
-- **Emulator Android**: default `http://10.0.2.2:3000` (host machine).
-- **Perangkat fisik**: gunakan IP LAN komputer, mis. `--dart-define=API_BASE=http://192.168.1.10:3000`,
-  atau ubah lewat tautan **Ubah alamat server** di halaman login / menu Pengaturan.
-- **Windows desktop**: `flutter run -d windows --dart-define=API_BASE=http://localhost:3000`.
+Default Android memakai `10.0.2.2` untuk emulator. Untuk perangkat fisik, ganti dengan IP
+komputer lewat `--dart-define=API_BASE=...` atau dari halaman login/Pengaturan.
 
-### Build APK
+Build APK:
 
 ```bash
 cd mobile
 flutter build apk --release --dart-define=API_BASE=http://10.0.2.2:3000
-# hasil: build/app/outputs/flutter-apk/app-release.apk
 ```
 
-APK yang disertakan di repo dibangun dengan base URL default emulator. Alamat server tetap dapat
-diganti dari dalam aplikasi tanpa rebuild. Izinkan notifikasi saat diminta (Android 13+).
+APK di repo dibangun dengan alamat emulator. Ukurannya 50.838.081 byte (48,5 MB), SHA-256
+`06C1F467549C327138B39F0725BABD7D24072F3DAF9C6CF858025811E1690500`. APK memakai debug
+signing key supaya bisa langsung dipasang untuk demo.
 
-File `artifacts/helpdesk.apk` berukuran 50.838.081 byte (48,5 MB) dengan SHA-256
-`06C1F467549C327138B39F0725BABD7D24072F3DAF9C6CF858025811E1690500`.
+Local notification hanya berjalan saat proses aplikasi masih aktif. Belum ada FCM, jadi
+notifikasi tidak muncul kalau aplikasi benar-benar dimatikan.
 
-### Catatan
-- Notifikasi yang dipakai adalah **local notification** (bonus), dipicu event Socket.IO; belum
-  memakai FCM sehingga tidak menerima notifikasi saat aplikasi benar-benar dimatikan.
-- APK ditandatangani dengan debug key agar dapat langsung dipasang untuk demo.
-- Lampiran di mobile ditampilkan sebagai nama file; upload/download penuh tersedia di web.
+## AI opsional
 
-### Tampilan
-
-<p align="center">
-  <img src="docs/screenshots/mobile-login.png" width="230" alt="Login mobile" />
-  <img src="docs/screenshots/mobile-detail.png" width="230" alt="Detail tiket" />
-  <img src="docs/screenshots/mobile-realtime.png" width="230" alt="Chat realtime" />
-</p>
-
----
-
-## 7. AI auto-reply (opsional)
-
-Tanpa konfigurasi, sistem memakai **fallback knowledge base** (keyword match) sehingga demo tetap
-jalan offline. Untuk memakai model OpenAI-compatible:
+Tanpa `AI_API_KEY`, server memakai pencocokan kata sederhana terhadap artikel knowledge base.
+Kalau key diisi, server memanggil endpoint OpenAI-compatible.
 
 ```bash
 cd server
@@ -261,52 +226,38 @@ copy .env.example .env
 npm start
 ```
 
-Variabel penting: `AI_AUTO_REPLY=false` untuk mematikan auto-reply, `AI_API_KEY` kosong untuk
-fallback KB. AI dipakai untuk balasan awal otomatis dan tombol **Balasan AI** manual; AI tidak
-menutup tiket dan tidak menggantikan keputusan agent.
+`AI_AUTO_REPLY=false` mematikan balasan otomatis. Tombol **Balasan AI** di web/mobile tetap
+memakai fallback knowledge base kalau key kosong.
 
----
-
-## 8. Testing
+## Testing
 
 ```bash
-# backend: REST lifecycle + RBAC + socket contract/idempotensi
 cd server
 npm test
 
-# mobile: model, formatter, widget smoke test
 cd mobile
 flutter analyze
 flutter test
 ```
 
-Hasil terakhir: **9 test backend lulus**, **4 test Flutter lulus**, `flutter analyze` tanpa issue,
-APK release berhasil dibangun (±48 MB).
+Terakhir: 9 test backend lulus, 4 test Flutter lulus, `flutter analyze` tanpa issue.
+Detail skenario ada di [`docs/QA.md`](docs/QA.md).
 
-QA manual yang sudah dijalankan: login semua role, kirim pesan web↔widget realtime, tiket widget
-muncul di inbox agent, laporan supervisor, admin user/kategori/KB, CSAT, dan pengecekan UI headless
-(Chrome + Puppeteer). Detail skenario dan hasilnya ada di [`docs/QA.md`](docs/QA.md).
+## Batasan
 
----
+- SQLite hanya cocok untuk satu instance. Untuk produksi perlu PostgreSQL dan Redis adapter
+  kalau Socket.IO dipakai di lebih dari satu node.
+- Notifikasi mobile masih lokal, belum FCM.
+- SLA dihitung 24/7. Belum ada pause saat status Pending atau kalender jam kerja.
+- Belum ada refresh token, SSO, atau enkripsi pesan di sisi klien.
+- Token web disimpan di `localStorage`; mobile di `shared_preferences`.
+- Widget tidak mendukung upload lampiran. Mobile hanya menampilkan nama file.
+- APK memakai debug key, bukan key untuk distribusi publik.
+- Seed memakai password demo. Jangan dipakai di environment nyata.
 
-## 9. Keputusan teknis
+## Dokumen
 
-- **SQLite + `better-sqlite3`** — nol konfigurasi, transaksi sinkron, cocok untuk demo single-node.
-- **Vanilla JS untuk web/widget** — memenuhi syarat "JavaScript" tanpa build tool; lebih mudah
-  dijalankan fresh clone.
-- **REST untuk aksi, Socket.IO untuk event** — aksi tetap berhasil saat socket bermasalah; socket
-  mempercepat sinkronisasi. Idempotensi membuat retry aman.
-- **JWT + bcrypt + RBAC berlapis** — pembatasan diterapkan di route dan socket, bukan hanya UI.
-- **Flutter** — satu basis kode Android/Windows, `socket_io_client` kompatibel dengan server.
-
-## 10. Batasan & pengembangan lanjut
-
-- SQLite belum cocok untuk multi-instance; produksi dapat memakai PostgreSQL + Redis adapter.
-- Notifikasi mobile bersifat lokal; FCM dapat ditambahkan untuk background push.
-- Belum ada SLA pause saat status Pending; hitung mundur SLA tetap berjalan selama tiket pending.
-- Belum ada enkripsi end-to-end atau SSO; token disimpan di storage lokal perangkat.
-- Seed memakai password demo — **jangan** dipakai di produksi.
-
----
-
-Dibuat oleh **Fanadillah** untuk Technical Test Software Engineer, Ciheul Technologies — Oktober 2026.
+- [`docs/ANALISIS.md`](docs/ANALISIS.md): alur, role, realtime, database.
+- [`docs/PANDUAN-PROYEK.md`](docs/PANDUAN-PROYEK.md): catatan implementasi dan keputusan.
+- [`docs/QA.md`](docs/QA.md): hasil test dan catatan perbaikan.
+- [`docs/README.md`](docs/README.md): isi folder docs dan cara regenerasi BPMN/WBS.

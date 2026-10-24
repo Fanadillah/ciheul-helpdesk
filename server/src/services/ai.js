@@ -66,8 +66,7 @@ async function callModel(prompt, history) {
 }
 
 /**
- * Produce the first AI response for a ticket. Always returns text:
- * when the provider is unavailable it falls back to the knowledge base.
+ * Buat balasan pertama. Kalau provider gagal, pakai knowledge base.
  */
 async function generateFirstReply(db, ticket, history = []) {
   const started = Date.now();
