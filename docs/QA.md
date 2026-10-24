@@ -107,3 +107,6 @@ Verifikasi akhir:
 - Smoke test web headless: login agent, 4 tiket tampil, detail tiket terbuka, panel notifikasi
   terbuka, tombol resync berfungsi, logout kembali ke halaman login, tanpa error console.
 - Server health `ok`; web dan widget demo merespons HTTP 200; login dan daftar tiket REST berhasil.
+- Fresh clone commit `7d1999d`: `npm ci`, `npm test` 9/9 lulus, server auto-seed 4 tiket, health
+  `ok`, web/widget HTTP 200, dan login agent berhasil. `npm audit --omit=dev` melaporkan
+  0 vulnerabilitas pada dependency produksi.
